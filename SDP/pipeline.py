@@ -19,28 +19,28 @@ class Pipeline(object):
             # 2. speaker diarization
             segments = self._sd.forward(audio_array = audio, sampling_rate = sampling_rate)
 
-            # # 3. asr
-            # asr_results = self._asr.forward(
-            #     audio, 
-            #     speech_timestamps= [
-            #         {
-            #             "start": ele["start"],
-            #             "end": ele["end"]
-            #         }
-            #         for ele in segments
-            #     ]
-            # )
+            # 3. asr
+            asr_results = self._asr.forward(
+                audio, 
+                speech_timestamps= [
+                    {
+                        "start": ele["start"],
+                        "end": ele["end"]
+                    }
+                    for ele in segments
+                ]
+            )
 
-            # return [
-            #     {   
-            #         "start": segment["start"],
-            #         "end": segment['end'],
-            #         "text": asr_results[_ith]["text"],
-            #         "speaker": segment['speaker_str']
-            #     }
-            #     for _ith, segment in enumerate(segments, start=1)
-            # ]
-            return []
+            return [
+                {   
+                    "start": segment["start"],
+                    "end": segment['end'],
+                    "text": asr_results[_ith]["text"],
+                    "speaker": segment['speaker_str']
+                }
+                for _ith, segment in enumerate(segments, start=1)
+            ]
+            
         except Exception as e:
             logger.error(f"Error at {audio_path},  detail: {e}")
             return None
