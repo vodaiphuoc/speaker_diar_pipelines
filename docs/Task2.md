@@ -8,7 +8,7 @@ Speaker diarization and ASR pipeline
 ## Task Status
 |task id|Description|Notes|Status|
 |---|---|---|---|
-|Phase 1|Do inference speaker diarization given an audio| see implementation in [class ](../SDP/diarization.py:Speaker_Diarization_Offline)| Done |
+|Phase 1|Do inference speaker diarization given an audio| see implementation in [class ](../SDP/diarization.py#Speaker_Diarization_Offline)| Done |
 |Phase 2|Do offline inference speaker diarization given | See results in [json file](../data_results/part1/results.json) |Done|
 |Phase 3|Do streaming diarization and ASR | | 50% |
 
