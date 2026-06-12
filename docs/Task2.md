@@ -2,6 +2,9 @@
 Owner: Vo Dai Phuoc \
 Report to: Luu Gia Thien
 
+## Release code: 
+https://github.com/vodaiphuoc/speaker_diar_pipelines/releases/tag/v1.0.0 
+
 ## Description
 Speaker diarization and ASR pipeline
 
