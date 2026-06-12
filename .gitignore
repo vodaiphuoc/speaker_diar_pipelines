@@ -2,5 +2,7 @@ __pycache__/
 **/__pycache__/
 examples/
 .venv/
+.onnx_venv/
 data/
 model.json
+.onnx_ckpt
