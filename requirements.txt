@@ -1,8 +1,9 @@
 av>=11
 Cython
 packaging
-nemo-toolkit[asr]>=2.7.3
+nemo-toolkit[asr]==2.7.2
+onnxscript
 faster-whisper
 typing_extensions==4.14.0
-nvidia-cublas-cu12 
+nvidia-cublas-cu12
 nvidia-cudnn-cu12
