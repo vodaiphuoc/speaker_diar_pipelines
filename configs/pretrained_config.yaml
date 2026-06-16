@@ -80,9 +80,9 @@ sortformer_modules:
   dropout_rate: 0.5
   fc_d_model: 512
   tf_d_model: 192
+  fifo_len: 124
+  chunk_len: 124
   spkcache_len: 188
-  fifo_len: 0
-  chunk_len: 188
   spkcache_update_period: 188
   chunk_left_context: 1
   chunk_right_context: 1
@@ -104,8 +104,8 @@ encoder:
   self_attention_model: rel_pos
   n_heads: 8
   att_context_size:
-  - -1
-  - -1
+    - -1
+    - -1
   att_context_style: regular
   xscaling: true
   untie_biases: true
@@ -141,8 +141,8 @@ optim:
   name: adamw
   lr: 0.0001
   betas:
-  - 0.9
-  - 0.98
+    - 0.9
+    - 0.98
   weight_decay: 0.001
   sched:
     name: InverseSquareRootAnnealing
