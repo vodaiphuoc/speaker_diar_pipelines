@@ -1,4 +1,5 @@
 import math
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -9,6 +10,15 @@ from SDP.onnx.preprocess.audio_preprocessing import (
 )
 
 LOG_MEL_ZERO = -16.635
+
+
+@dataclass
+class FeatureBufferChunk:
+    features: torch.Tensor
+    left_offset: int
+    right_offset: int
+    center_frame_count: int
+    center_diar_frame_count: int
 
 
 class AudioBufferer:
@@ -68,6 +78,8 @@ class CacheFeatureBufferer:
         preprocessor: AudioToMelSpectrogramPreprocessorOnnxRunner,
         device: torch.device,
         fill_value: float = LOG_MEL_ZERO,
+        left_context_in_secs: float | None = None,
+        right_context_in_secs: float | None = None,
     ):
 
         if buffer_size_in_secs < chunk_size_in_secs:
@@ -79,6 +91,16 @@ class CacheFeatureBufferer:
         self.buffer_size_in_secs = buffer_size_in_secs
         self.chunk_size_in_secs = chunk_size_in_secs
         self.device = device
+        extra_context_secs = max(0.0, buffer_size_in_secs - chunk_size_in_secs)
+        if left_context_in_secs is None:
+            left_context_in_secs = extra_context_secs / 2
+        if right_context_in_secs is None:
+            right_context_in_secs = extra_context_secs - left_context_in_secs
+
+        self.left_context_in_secs = left_context_in_secs
+        self.right_context_in_secs = right_context_in_secs
+        self.left_context_samples = int(round(left_context_in_secs * sample_rate))
+        self.right_context_samples = int(round(right_context_in_secs * sample_rate))
 
         if hasattr(preprocessor_cfg, "log") and preprocessor_cfg.log:
             self.ZERO_LEVEL_SPEC_DB_VAL = (
@@ -102,6 +124,8 @@ class CacheFeatureBufferer:
             device=self.device,
         )
         self.preprocessor = preprocessor
+        self.received_audio = torch.empty(0, dtype=torch.float32)
+        self.next_chunk_start_sample = 0
 
     def is_buffer_empty(self) -> bool:
         """
@@ -117,6 +141,8 @@ class CacheFeatureBufferer:
         """
         self.audio_buffer.reset()
         self.feature_buffer.fill_(self.ZERO_LEVEL_SPEC_DB_VAL)
+        self.received_audio = torch.empty(0, dtype=torch.float32)
+        self.next_chunk_start_sample = 0
 
     def _update_feature_buffer(self, feat_chunk: torch.Tensor) -> None:
         """
@@ -136,6 +162,7 @@ class CacheFeatureBufferer:
             audio_signal (torch.Tensor): audio signal
         Returns:
             torch.Tensor: preprocessed features
+                Shape (128, 1008)
         """
         audio_signal = audio_signal.unsqueeze_(0).to(self.device)
         audio_signal_len = torch.tensor([audio_signal.shape[1]], device=self.device)
@@ -143,7 +170,10 @@ class CacheFeatureBufferer:
             input_signal=audio_signal,
             length=audio_signal_len,
         )
-        features = features.squeeze()
+        if features.ndim == 3:
+            features = features.squeeze(0)
+        elif features.ndim == 1:
+            features = features.unsqueeze(0)
         return features
 
     def update(self, audio: np.ndarray) -> None:
@@ -153,8 +183,18 @@ class CacheFeatureBufferer:
             frame (Frame): frame to update the buffer with
         """
 
+        if not isinstance(audio, torch.Tensor):
+            audio_tensor = torch.from_numpy(audio).to(torch.float32)
+        else:
+            audio_tensor = audio.detach().cpu().to(torch.float32)
+
+        self.received_audio = torch.cat([self.received_audio, audio_tensor])
+
         # Update the sample buffer with the new frame
-        self.audio_buffer.update(audio)
+        rolling_audio = audio_tensor
+        if rolling_audio.shape[0] > self.audio_buffer.buffer_size:
+            rolling_audio = rolling_audio[-self.audio_buffer.buffer_size :]
+        self.audio_buffer.update(rolling_audio)
 
         if math.isclose(self.buffer_size_in_secs, self.chunk_size_in_secs):
             # If the buffer size is equal to the chunk size, just take the whole buffer
@@ -175,6 +215,60 @@ class CacheFeatureBufferer:
 
         # Update the feature buffer with the new features
         self._update_feature_buffer(features[:, -self.feature_chunk_len :])
+
+    def pop_ready_feature_chunk(self) -> FeatureBufferChunk | None:
+        center_end = self.next_chunk_start_sample + self.chunk_size
+        required_samples = center_end + self.right_context_samples
+        if self.received_audio.shape[0] < required_samples:
+            return None
+
+        return self._pop_feature_chunk(finalize=False)
+
+    def flush_ready_feature_chunks(self) -> list[FeatureBufferChunk]:
+        chunks = []
+        while self.next_chunk_start_sample < self.received_audio.shape[0]:
+            chunk = self._pop_feature_chunk(finalize=True)
+            if chunk is None:
+                break
+            chunks.append(chunk)
+        return chunks
+
+    def _pop_feature_chunk(self, finalize: bool) -> FeatureBufferChunk | None:
+        stream_len = self.received_audio.shape[0]
+        center_start = self.next_chunk_start_sample
+        if center_start >= stream_len:
+            return None
+
+        center_end = center_start + self.chunk_size
+        if not finalize and stream_len < center_end + self.right_context_samples:
+            return None
+
+        actual_center_end = min(center_end, stream_len) if finalize else center_end
+        slice_start = max(0, center_start - self.left_context_samples)
+        requested_slice_end = center_end + self.right_context_samples
+        slice_end = min(requested_slice_end, stream_len)
+        if slice_end <= slice_start:
+            return None
+
+        left_offset_samples = center_start - slice_start
+        right_offset_samples = max(0, slice_end - actual_center_end)
+        center_samples = actual_center_end - center_start
+        features = self._preprocess(self.received_audio[slice_start:slice_end])
+
+        chunk = FeatureBufferChunk(
+            features=features,
+            left_offset=self._samples_to_feature_frames(left_offset_samples),
+            right_offset=self._samples_to_feature_frames(right_offset_samples),
+            center_frame_count=self._samples_to_feature_frames(center_samples),
+            center_diar_frame_count=self._samples_to_feature_frames(center_samples),
+        )
+        self.next_chunk_start_sample += center_samples
+        return chunk
+
+    def _samples_to_feature_frames(self, samples: int) -> int:
+        if samples <= 0:
+            return 0
+        return int(round(samples / (self.timestep_duration * self.sample_rate)))
 
     def get_buffer(self) -> torch.Tensor:
         """
