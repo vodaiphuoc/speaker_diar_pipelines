@@ -1,3 +1,6 @@
+# This module is copied from [vad_utils.py](https://github.com/NVIDIA-NeMo/NeMo/blob/main/nemo/collections/asr/parts/utils/vad_utils.py)
+# keep this for calibration between implemenation in [post_processing.py](SDP/onnx/diarization/post_processing.py) with Nemo's implementation
+
 from dataclasses import asdict
 from typing import Dict
 
@@ -238,7 +241,7 @@ def ts_vad_post_processing(
     Args:
         ts_vad_binary_vec (Tensor):
             Sigmoid values of each frame and each speaker.
-            Dimension: (num_frames,)
+            Dimension: (diar_frame_count,)
         cfg_vad_params (PostProcessingParams):
             Configuration (omega config) of VAD parameters.
         unit_10ms_frame_count (int, optional):
