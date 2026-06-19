@@ -52,5 +52,5 @@ def run():
 def main():
     r = run.remote()
 
-    with open("data_results/part1/results.json", "w", encoding="utf-8") as fp:
+    with open("data_results/part1/results_phase2.json", "w", encoding="utf-8") as fp:
         json.dump(r, fp, ensure_ascii=False, indent=4)
