@@ -159,8 +159,8 @@ class StreamingDiarizerOnnxService(object):
                     stream_id=stream_id,
                     sequence_id=self._next_sequence_id,
                     speaker_id=spk,
-                    start=float(start),
-                    end=float(end),
+                    start=round((start), 2),
+                    end=round(float(end), 2),
                 )
                 self._next_sequence_id += 1
                 self._event_queue.append(event)
