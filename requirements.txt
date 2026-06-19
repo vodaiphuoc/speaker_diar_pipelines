@@ -1,8 +1,12 @@
 av>=11
 Cython
 packaging
-nemo-toolkit[asr]==2.7.2
+# nemo-toolkit[asr]==2.7.3
+nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@0f378e9d8dd72630c911025b555f18658d44cc8f
+onnx
 onnxscript
+onnxruntime
+librosa
 faster-whisper
 typing_extensions==4.14.0
 nvidia-cublas-cu12
