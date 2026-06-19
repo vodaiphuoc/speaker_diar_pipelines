@@ -5,4 +5,4 @@ examples/
 .onnx_venv/
 data/
 model.json
-.onnx_ckpt
+*.onnx
