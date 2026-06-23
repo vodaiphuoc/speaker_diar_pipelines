@@ -1,6 +1,14 @@
 __pycache__/
 **/__pycache__/
+.git/
+.github/
+.codex/
+.ruff_cache/
 .venv/
 *_venv/
+.onnx_ckpt/
+data/
+data_results/
+docs/
 **/*.onnx
 **/*.data
