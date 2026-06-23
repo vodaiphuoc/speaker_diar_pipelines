@@ -78,7 +78,11 @@ class DockerAndWorkflowTest(unittest.TestCase):
             path.name: path.read_text(encoding="utf-8")
             for path in (PROJECT_ROOT / "docker").glob("Dockerfile*")
         }
-        onnx_dockerfile = dockerfiles["Dockerfile_onnx_cpu"]
+        try:
+            onnx_dockerfile = dockerfiles["Dockerfile_onnx_cpu"]
+        except Exception as e:
+            print(dockerfiles)
+            raise e
         calibration_dockerfile = dockerfiles["Dockerfile_calibration_cpu"]
         onnx_test_script = (
             PROJECT_ROOT / "scripts" / "ci" / "run_onnx_tests.sh"
@@ -98,12 +102,8 @@ class DockerAndWorkflowTest(unittest.TestCase):
             self.assertIn("org.opencontainers.image.description=", contents, name)
 
     def test_exports_and_ci_use_pipeline_artifact_manifests(self):
-        asr_export = (PROJECT_ROOT / "exports" / "asr.py").read_text(
-            encoding="utf-8"
-        )
-        diar_export = (PROJECT_ROOT / "exports" / "diar.py").read_text(
-            encoding="utf-8"
-        )
+        asr_export = (PROJECT_ROOT / "exports" / "asr.py").read_text(encoding="utf-8")
+        diar_export = (PROJECT_ROOT / "exports" / "diar.py").read_text(encoding="utf-8")
         calibration_script = (
             PROJECT_ROOT / "scripts" / "ci" / "run_calibration.sh"
         ).read_text(encoding="utf-8")
