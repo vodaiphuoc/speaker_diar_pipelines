@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  onnx-tests:
+    name: ONNX CPU tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build ONNX test image
+        run: |
+          docker build \
+            --file docker/Dockerfile_onnx_cpu \
+            --tag speaker-diar-onnx-tests:${{ github.sha }} \
+            .
+
+      - name: Run ONNX tests
+        run: docker run --rm speaker-diar-onnx-tests:${{ github.sha }}
+
+  nemotron-calibration:
+    name: Native NeMo versus ONNX calibration
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          docker system prune --all --force
+          df -h
+
+      - name: Restore model download caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            .ci-cache/huggingface
+            .ci-cache/torch
+          key: nemotron-3.5-asr-${{ runner.os }}-${{ hashFiles('onnx_requirements.txt', 'test_requirements.txt', 'calibration_requirements.txt') }}
+
+      - name: Build calibration image
+        run: |
+          docker build \
+            --file docker/Dockerfile_calibration_cpu \
+            --tag speaker-diar-calibration:${{ github.sha }} \
+            .
+
+      - name: Export ONNX assets and run parity tests
+        run: |
+          set -o pipefail
+          mkdir -p \
+            .ci-cache/huggingface \
+            .ci-cache/torch \
+            .onnx_ckpt/asr \
+            ci-logs
+          docker run --rm \
+            --volume "${PWD}/.ci-cache/huggingface:/root/.cache/huggingface" \
+            --volume "${PWD}/.ci-cache/torch:/root/.cache/torch" \
+            --volume "${PWD}/.onnx_ckpt/asr:/app/.onnx_ckpt/asr" \
+            --env ASR_ASSET_DIR=/app/.onnx_ckpt/asr \
+            --env RUN_NEMOTRON_CALIBRATION=1 \
+            --env NEMOTRON_CALIBRATION_WAV=/app/tests/fixtures/asr_calibration_vi.wav \
+            speaker-diar-calibration:${{ github.sha }} \
+            bash scripts/ci/run_calibration.sh \
+            2>&1 | tee ci-logs/calibration.log
+
+      - name: Upload calibration logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nemotron-calibration-logs-${{ github.run_id }}
+          path: ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7
