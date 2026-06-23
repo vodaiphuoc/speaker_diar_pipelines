@@ -1,6 +1,5 @@
 import ast
 import unittest
-import wave
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[1]
