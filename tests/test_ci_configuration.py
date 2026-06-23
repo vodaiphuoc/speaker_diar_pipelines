@@ -56,7 +56,7 @@ class DependencyBoundaryTest(unittest.TestCase):
 
 class CalibrationFixtureTest(unittest.TestCase):
     def test_calibration_fixture_is_short_mono_16khz_pcm(self):
-        fixture = PROJECT_ROOT / "tests" / "fixtures" / "asr_calibration_vi.wav"
+        fixture = PROJECT_ROOT / "tests" / "fixtures" / "bacsidatnhkhoavitadoc_1.wav"
         self.assertTrue(fixture.is_file())
 
         with wave.open(str(fixture), "rb") as wav_file:
