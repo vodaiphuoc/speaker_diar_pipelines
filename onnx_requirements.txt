@@ -4,3 +4,4 @@ onnxruntime
 torch
 omegaconf
 librosa
+sentencepiece
