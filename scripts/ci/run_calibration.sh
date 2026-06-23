@@ -6,7 +6,7 @@ CALIBRATION_WAV="${NEMOTRON_CALIBRATION_WAV:-/app/tests/fixtures/asr_calibration
 
 mkdir -p "${ASR_ASSET_DIR}"
 
-python exports/asr.py --output-dir "${ASR_ASSET_DIR}"
+python -m exports.asr --output-dir "${ASR_ASSET_DIR}"
 
 ASR_MANIFEST="${ASR_ASSET_DIR}/asr_artifact.json"
 test -s "${ASR_MANIFEST}"
