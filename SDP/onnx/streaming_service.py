@@ -7,6 +7,7 @@ from typing import Literal
 import numpy as np
 import torch
 
+from SDP.onnx.asr.streaming import StreamingASREvent, StreamingASRSession
 # from SDP.onnx.diarization.nemo_vad_utils import ts_vad_post_processing
 from SDP.onnx.diarization.post_processing import StreamingDiarizationPostProcessor
 from SDP.onnx.diarization.streaming import SortformerONNXRunner
@@ -31,6 +32,12 @@ class StreamingDiarizationEvent:
     end: float
     event_type: Literal["diarization"] = "diarization"
     is_final: bool = True
+
+
+@dataclass(frozen=True)
+class StreamingPipelineResult:
+    diarization_events: tuple[StreamingDiarizationEvent, ...]
+    asr_events: tuple[StreamingASREvent, ...]
 
 
 class StreamingDiarizerOnnxService(object):
@@ -116,8 +123,16 @@ class StreamingDiarizerOnnxService(object):
         Main entrypoint to be call from websocket endpoint
         or processing each chunk audio from a stream
         """
-        audio_array = np.frombuffer(audio, dtype=np.int16).astype(np.float32) / 32768.0
+        if len(audio) % np.dtype(np.int16).itemsize:
+            raise ValueError("PCM input must contain aligned 16-bit samples")
+        audio_array = (
+            np.frombuffer(audio, dtype=np.int16).astype(np.float32) / 32768.0
+        )
+        return self.process_samples(audio_array, stream_id=stream_id)
 
+    def process_samples(
+        self, audio_array: np.ndarray, stream_id: str = "default"
+    ) -> list[StreamingDiarizationEvent]:
         self._feature_bufferer.update(audio_array)
 
         events = []
@@ -207,6 +222,60 @@ class StreamingDiarizerOnnxService(object):
         )
 
         return self._post_diar_processor.process_chunk(chunk_preds[0])
+
+
+class StreamingDiarizationASROnnxService:
+    """Fan one decoded PCM stream into independent diarization and ASR branches."""
+
+    def __init__(
+        self,
+        diarization_service: StreamingDiarizerOnnxService,
+        asr_session: StreamingASRSession,
+    ) -> None:
+        self.diarization_service = diarization_service
+        self.asr_session = asr_session
+        self._stream_id: str | None = None
+        self._flushed: bool = False
+
+    def process(
+        self, audio: bytes, stream_id: str = "default"
+    ) -> StreamingPipelineResult:
+        self._validate_stream(stream_id)
+        if self._flushed:
+            raise RuntimeError("Cannot process audio after pipeline flush")
+        if len(audio) % np.dtype(np.int16).itemsize:
+            raise ValueError("PCM input must contain aligned 16-bit samples")
+        samples = (
+            np.frombuffer(audio, dtype=np.int16).astype(np.float32) / 32768.0
+        )
+        diarization_events = self.diarization_service.process_samples(
+            samples, stream_id=stream_id
+        )
+        asr_events = self.asr_session.process_samples(samples, stream_id=stream_id)
+        return StreamingPipelineResult(
+            diarization_events=tuple(diarization_events),
+            asr_events=tuple(asr_events),
+        )
+
+    def flush(self, stream_id: str = "default") -> StreamingPipelineResult:
+        self._validate_stream(stream_id)
+        if self._flushed:
+            return StreamingPipelineResult((), ())
+        self._flushed = True
+        return StreamingPipelineResult(
+            diarization_events=tuple(
+                self.diarization_service.flush(stream_id=stream_id)
+            ),
+            asr_events=tuple(self.asr_session.flush(stream_id=stream_id)),
+        )
+
+    def _validate_stream(self, stream_id: str) -> None:
+        if self._stream_id is None:
+            self._stream_id = stream_id
+        elif self._stream_id != stream_id:
+            raise ValueError(
+                "StreamingDiarizationASROnnxService supports one active stream per instance"
+            )
 
     # def _diarize_output_processing(self, outputs: torch.Tensor):
     #     """
