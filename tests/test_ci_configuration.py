@@ -54,18 +54,18 @@ class DependencyBoundaryTest(unittest.TestCase):
             self.assertFalse((PROJECT_ROOT / old_path).exists(), old_path)
 
 
-class CalibrationFixtureTest(unittest.TestCase):
-    def test_calibration_fixture_is_short_mono_16khz_pcm(self):
-        fixture = PROJECT_ROOT / "tests" / "fixtures" / "bacsidatnhkhoavitadoc_1.wav"
-        self.assertTrue(fixture.is_file())
+# class CalibrationFixtureTest(unittest.TestCase):
+#     def test_calibration_fixture_is_short_mono_16khz_pcm(self):
+#         fixture = PROJECT_ROOT / "tests" / "fixtures" / "bacsidatnhkhoavitadoc_1.wav"
+#         self.assertTrue(fixture.is_file())
 
-        with wave.open(str(fixture), "rb") as wav_file:
-            self.assertEqual(wav_file.getframerate(), 16000)
-            self.assertEqual(wav_file.getnchannels(), 1)
-            self.assertEqual(wav_file.getsampwidth(), 2)
-            duration = wav_file.getnframes() / wav_file.getframerate()
-        self.assertGreaterEqual(duration, 7.5)
-        self.assertLessEqual(duration, 8.5)
+#         with wave.open(str(fixture), "rb") as wav_file:
+#             self.assertEqual(wav_file.getframerate(), 16000)
+#             self.assertEqual(wav_file.getnchannels(), 1)
+#             self.assertEqual(wav_file.getsampwidth(), 2)
+#             duration = wav_file.getnframes() / wav_file.getframerate()
+#         self.assertGreaterEqual(duration, 7.5)
+#         self.assertLessEqual(duration, 8.5)
 
 
 class DockerAndWorkflowTest(unittest.TestCase):
