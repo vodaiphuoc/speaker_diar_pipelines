@@ -56,7 +56,7 @@ jobs:
           path: |
             .ci-cache/huggingface
             .ci-cache/torch
-          key: nemotron-3.5-asr-${{ runner.os }}-${{ hashFiles('onnx_requirements.txt', 'test_requirements.txt', 'calibration_requirements.txt') }}
+          key: nemotron-3.5-asr-${{ runner.os }}-${{ hashFiles('requirements/onnx.txt', 'requirements/test.txt', 'requirements/calibration.txt') }}
 
       - name: Build calibration image
         run: |
