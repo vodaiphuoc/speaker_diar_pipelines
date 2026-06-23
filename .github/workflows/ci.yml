@@ -79,7 +79,7 @@ jobs:
             --volume "${PWD}/.onnx_ckpt/asr:/app/.onnx_ckpt/asr" \
             --env ASR_ASSET_DIR=/app/.onnx_ckpt/asr \
             --env RUN_NEMOTRON_CALIBRATION=1 \
-            --env NEMOTRON_CALIBRATION_WAV=/app/tests/fixtures/asr_calibration_vi.wav \
+            --env NEMOTRON_CALIBRATION_WAV=/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav \
             speaker-diar-calibration:${{ github.sha }} \
             bash scripts/ci/run_calibration.sh \
             2>&1 | tee ci-logs/calibration.log
