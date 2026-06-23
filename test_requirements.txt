@@ -1,0 +1,4 @@
+-r onnx_requirements.txt
+
+ruff==0.15.18
+scipy>=1.13,<2
