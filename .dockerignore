@@ -1,7 +1,7 @@
 __pycache__/
 **/__pycache__/
 .git/
-.github/
+#.github/
 .codex/
 .ruff_cache/
 .venv/

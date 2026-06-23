@@ -30,5 +30,6 @@ COPY exports/ ./exports/
 COPY tests/ ./tests/
 COPY scripts/ci/ ./scripts/ci/
 COPY run_phase_three.py ./
+COPY .github/ ./.github/
 
 CMD ["bash"]
