@@ -24,6 +24,7 @@ COPY SDP/ ./SDP/
 COPY configs/ ./configs/
 COPY exports/ ./exports/
 COPY tests/ ./tests/
+COPY docker/ ./docker/
 COPY scripts/ci/ ./scripts/ci/
 COPY run_phase_three.py ./
 
