@@ -17,6 +17,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  workflow-lint:
+    name: GitHub Actions workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
   onnx-tests:
     name: ONNX CPU tests
     runs-on: ubuntu-latest

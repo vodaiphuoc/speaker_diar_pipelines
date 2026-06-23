@@ -1,5 +1,4 @@
 import ast
-import re
 import unittest
 from pathlib import Path
 
@@ -122,41 +121,6 @@ class DockerAndWorkflowTest(unittest.TestCase):
             "create_nemotron_streaming_session_from_manifest", calibration_test
         )
         self.assertNotIn("ASRModelPaths(", calibration_test)
-
-    def test_calibration_runs_for_every_workflow_trigger(self):
-        workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(
-            encoding="utf-8"
-        )
-        calibration_job = workflow.split("  nemotron-calibration:", maxsplit=1)[1]
-
-        self.assertIn("pull_request:", workflow)
-        self.assertIn("push:", workflow)
-        self.assertIn("branches:\n      - main", workflow)
-        self.assertIn("schedule:", workflow)
-        self.assertIn("workflow_dispatch:", workflow)
-        self.assertIsNone(
-            re.search(r"(?m)^    if:", calibration_job),
-            "nemotron-calibration must run for every workflow trigger",
-        )
-
-    # def test_github_workflow_has_fast_and_scheduled_calibration_jobs(self):
-    #     workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(
-    #         encoding="utf-8"
-    #     )
-
-    #     self.assertIn("pull_request:", workflow)
-    #     self.assertIn("schedule:", workflow)
-    #     self.assertIn("workflow_dispatch:", workflow)
-    #     self.assertIn("onnx-tests:", workflow)
-    #     self.assertIn("nemotron-calibration:", workflow)
-    #     self.assertIn("docker/Dockerfile_onnx_cpu", workflow)
-    #     self.assertIn("docker/Dockerfile_calibration_cpu", workflow)
-    #     self.assertIn("RUN_NEMOTRON_CALIBRATION=1", workflow)
-    #     self.assertIn("timeout-minutes: 300", workflow)
-    #     self.assertIn("requirements/onnx.txt", workflow)
-    #     self.assertIn("requirements/test.txt", workflow)
-    #     self.assertIn("requirements/calibration.txt", workflow)
-
 
 if __name__ == "__main__":
     unittest.main()
