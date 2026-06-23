@@ -1,6 +1,8 @@
 import unittest
 import asyncio
+import inspect
 from types import SimpleNamespace
+from typing import get_type_hints
 
 import numpy as np
 import torch
@@ -8,8 +10,10 @@ import torch
 from SDP.onnx.diarization.types import StreamingSortformerState
 from SDP.onnx.preprocess.feature_buffer import FeatureBufferChunk
 from SDP.onnx.streaming_service import (
+    StreamingDiarizationASROnnxService,
     StreamingDiarizationEvent,
     StreamingDiarizerOnnxService,
+    StreamingPipelineResult,
 )
 
 
@@ -213,6 +217,85 @@ class StreamingServiceContextTest(unittest.TestCase):
         self.assertEqual(first.stream_id, "s1")
         self.assertEqual(first.sequence_id, 0)
         self.assertEqual(second.sequence_id, 1)
+
+
+class FakeStreamingBranch:
+    def __init__(self, event):
+        self.event = event
+        self.sample_calls = []
+        self.flush_calls = []
+
+    def process_samples(self, samples, stream_id):
+        self.sample_calls.append((samples.copy(), stream_id))
+        return [self.event]
+
+    def flush(self, stream_id):
+        self.flush_calls.append(stream_id)
+        return [self.event]
+
+
+class CombinedStreamingServiceTest(unittest.TestCase):
+    def test_combined_service_public_methods_have_type_hints(self):
+        init_hints = get_type_hints(StreamingDiarizationASROnnxService.__init__)
+        process_hints = get_type_hints(StreamingDiarizationASROnnxService.process)
+        flush_hints = get_type_hints(StreamingDiarizationASROnnxService.flush)
+
+        self.assertIn("diarization_service", init_hints)
+        self.assertIn("asr_session", init_hints)
+        self.assertIs(init_hints["return"], type(None))
+        self.assertIs(process_hints["audio"], bytes)
+        self.assertIs(process_hints["return"], StreamingPipelineResult)
+        self.assertIs(flush_hints["return"], StreamingPipelineResult)
+        self.assertIsNot(
+            inspect.signature(
+                StreamingDiarizationASROnnxService._validate_stream
+            ).return_annotation,
+            inspect.Signature.empty,
+        )
+
+    def test_process_decodes_pcm_once_and_fans_same_samples_to_both_branches(self):
+        diar_event = SimpleNamespace(event_type="diarization")
+        asr_event = SimpleNamespace(event_type="asr")
+        diarizer = FakeStreamingBranch(diar_event)
+        asr = FakeStreamingBranch(asr_event)
+        service = StreamingDiarizationASROnnxService(
+            diarization_service=diarizer,
+            asr_session=asr,
+        )
+        pcm = np.array([32767, -32768], dtype=np.int16).tobytes()
+
+        result = service.process(pcm, stream_id="stream-1")
+
+        self.assertEqual(
+            result,
+            StreamingPipelineResult(
+                diarization_events=(diar_event,),
+                asr_events=(asr_event,),
+            ),
+        )
+        self.assertEqual(len(diarizer.sample_calls), 1)
+        self.assertEqual(len(asr.sample_calls), 1)
+        np.testing.assert_array_equal(
+            diarizer.sample_calls[0][0],
+            asr.sample_calls[0][0],
+        )
+        np.testing.assert_allclose(
+            diarizer.sample_calls[0][0],
+            np.array([32767 / 32768.0, -1.0], dtype=np.float32),
+        )
+
+    def test_flush_returns_independent_branch_events(self):
+        diar_event = SimpleNamespace(event_type="diarization")
+        asr_event = SimpleNamespace(event_type="asr")
+        service = StreamingDiarizationASROnnxService(
+            diarization_service=FakeStreamingBranch(diar_event),
+            asr_session=FakeStreamingBranch(asr_event),
+        )
+
+        result = service.flush(stream_id="stream-1")
+
+        self.assertEqual(result.diarization_events, (diar_event,))
+        self.assertEqual(result.asr_events, (asr_event,))
 
 
 if __name__ == "__main__":
