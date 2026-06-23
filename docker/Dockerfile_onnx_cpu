@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.ref.name="development" \
+      org.opencontainers.image.description="ONNX CPU test image; not production-ready"
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -12,13 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY onnx_requirements.txt dev_requirements.txt  test_requirements.txt calibration_requirements.txt ./
+COPY requirements/ ./requirements/
 
 RUN python -m pip install --upgrade pip && \
-    python -m pip install --no-cache-dir -r test_requirements.txt
+    python -m pip install --no-cache-dir -r requirements/test.txt
 
 COPY SDP/ ./SDP/
 COPY configs/ ./configs/
+COPY exports/ ./exports/
 COPY tests/ ./tests/
 COPY scripts/ci/ ./scripts/ci/
 COPY run_phase_three.py ./
