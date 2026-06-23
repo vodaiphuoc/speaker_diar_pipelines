@@ -721,3 +721,25 @@ def create_nemotron_streaming_session(
         blank_id=runtime_config.blank_id,
         prompt_index=runtime_config.prompt_index,
     )
+
+
+def create_nemotron_streaming_session_from_manifest(
+    manifest_path: str | Path,
+    device: Literal["cpu", "cuda"] = "cpu",
+    target_language: str = "vi-VN",
+) -> StreamingASRSession:
+    from SDP.onnx.artifacts import load_asr_artifact_manifest
+
+    artifact = load_asr_artifact_manifest(manifest_path)
+    return create_nemotron_streaming_session(
+        ASRModelPaths(
+            preprocessor=str(artifact.preprocessor.onnx),
+            encoder=str(artifact.encoder.onnx),
+            prompt_projection=str(artifact.prompt_projection.onnx),
+            decoder_joint=str(artifact.decoder_joint.onnx),
+            tokenizer=str(artifact.tokenizer),
+        ),
+        config_path=str(artifact.config),
+        device=device,
+        target_language=target_language,
+    )

@@ -39,6 +39,11 @@ class DependencyBoundaryTest(unittest.TestCase):
             PROJECT_ROOT / "requirements" / "onnx.txt"
         ).read_text(encoding="utf-8")
         self.assertNotIn("nemo_toolkit", production_requirements)
+        self.assertNotRegex(production_requirements, r"(?m)^onnx(?:[<=>]|$)")
+        self.assertIn(
+            "onnx>=",
+            (PROJECT_ROOT / "requirements" / "test.txt").read_text(),
+        )
         self.assertIn(
             "nemo_toolkit[asr]",
             (PROJECT_ROOT / "requirements" / "calibration.txt").read_text(),
@@ -91,6 +96,29 @@ class DockerAndWorkflowTest(unittest.TestCase):
                 'org.opencontainers.image.ref.name="development"', contents, name
             )
             self.assertIn("org.opencontainers.image.description=", contents, name)
+
+    def test_exports_and_ci_use_pipeline_artifact_manifests(self):
+        asr_export = (PROJECT_ROOT / "exports" / "asr.py").read_text(
+            encoding="utf-8"
+        )
+        diar_export = (PROJECT_ROOT / "exports" / "diar.py").read_text(
+            encoding="utf-8"
+        )
+        calibration_script = (
+            PROJECT_ROOT / "scripts" / "ci" / "run_calibration.sh"
+        ).read_text(encoding="utf-8")
+        calibration_test = (
+            PROJECT_ROOT / "tests" / "test_asr_calibration.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("write_asr_artifact_manifest(", asr_export)
+        self.assertIn("write_diarization_artifact_manifest(", diar_export)
+        self.assertIn("asr_artifact.json", calibration_script)
+        self.assertIn("load_asr_artifact_manifest", calibration_script)
+        self.assertIn(
+            "create_nemotron_streaming_session_from_manifest", calibration_test
+        )
+        self.assertNotIn("ASRModelPaths(", calibration_test)
 
     # def test_github_workflow_has_fast_and_scheduled_calibration_jobs(self):
     #     workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(

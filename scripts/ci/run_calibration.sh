@@ -8,22 +8,19 @@ mkdir -p "${ASR_ASSET_DIR}"
 
 python exports/asr.py --output-dir "${ASR_ASSET_DIR}"
 
-required_assets=(
-  asr_pretrained_config.yaml
-  preprocessor.onnx
-  final_encoder-exported_asr.onnx
-  final_encoder_weight-exported_asr.data
-  prompt_projection.onnx
-  decoder_joint-exported_asr.onnx
-  tokenizer.model
-)
+ASR_MANIFEST="${ASR_ASSET_DIR}/asr_artifact.json"
+test -s "${ASR_MANIFEST}"
+python - "${ASR_MANIFEST}" <<'PY'
+import sys
 
-for asset in "${required_assets[@]}"; do
-  test -s "${ASR_ASSET_DIR}/${asset}"
-done
+from SDP.onnx.artifacts import load_asr_artifact_manifest
+
+load_asr_artifact_manifest(sys.argv[1])
+PY
 
 ruff check \
   SDP/__init__.py \
+  SDP/onnx/artifacts.py \
   SDP/onnx/asr \
   SDP/onnx/preprocess/audio_preprocessing.py \
   SDP/onnx/streaming_service.py \

@@ -3,6 +3,7 @@ from .streaming import (
     StreamingASREvent,
     StreamingASRSession,
     create_nemotron_streaming_session,
+    create_nemotron_streaming_session_from_manifest,
 )
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "StreamingASREvent",
     "StreamingASRSession",
     "create_nemotron_streaming_session",
+    "create_nemotron_streaming_session_from_manifest",
 ]

@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speaker-diar-pipelines.local/schemas/artifact_manifest.schema.json",
+  "title": "ONNX Runtime Artifact Manifest",
+  "type": "object",
+  "required": [
+    "format_version",
+    "pipeline",
+    "source_model",
+    "components",
+    "runtime_assets"
+  ],
+  "properties": {
+    "format_version": {
+      "const": 1
+    },
+    "pipeline": {
+      "enum": [
+        "asr",
+        "diarization"
+      ]
+    },
+    "source_model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "components": {
+      "type": "object"
+    },
+    "runtime_assets": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "anyOf": [
+          {
+            "pattern": "^/"
+          },
+          {
+            "pattern": "^[A-Za-z]:[\\\\/]"
+          },
+          {
+            "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)"
+          }
+        ]
+      }
+    },
+    "component": {
+      "type": "object",
+      "required": [
+        "onnx",
+        "external_data"
+      ],
+      "properties": {
+        "onnx": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "external_data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relativePath"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "pipeline": {
+          "const": "asr"
+        },
+        "components": {
+          "type": "object",
+          "required": [
+            "preprocessor",
+            "encoder",
+            "prompt_projection",
+            "decoder_joint"
+          ],
+          "properties": {
+            "preprocessor": {
+              "$ref": "#/$defs/component"
+            },
+            "encoder": {
+              "$ref": "#/$defs/component"
+            },
+            "prompt_projection": {
+              "$ref": "#/$defs/component"
+            },
+            "decoder_joint": {
+              "$ref": "#/$defs/component"
+            }
+          },
+          "additionalProperties": false
+        },
+        "runtime_assets": {
+          "type": "object",
+          "required": [
+            "config",
+            "tokenizer"
+          ],
+          "properties": {
+            "config": {
+              "$ref": "#/$defs/relativePath"
+            },
+            "tokenizer": {
+              "$ref": "#/$defs/relativePath"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "properties": {
+        "pipeline": {
+          "const": "diarization"
+        },
+        "components": {
+          "type": "object",
+          "required": [
+            "preprocessor",
+            "sortformer"
+          ],
+          "properties": {
+            "preprocessor": {
+              "$ref": "#/$defs/component"
+            },
+            "sortformer": {
+              "$ref": "#/$defs/component"
+            }
+          },
+          "additionalProperties": false
+        },
+        "runtime_assets": {
+          "type": "object",
+          "required": [
+            "config"
+          ],
+          "properties": {
+            "config": {
+              "$ref": "#/$defs/relativePath"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  ]
+}

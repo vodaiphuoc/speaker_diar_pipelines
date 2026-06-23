@@ -28,10 +28,14 @@
 #     "type": "file",
 #     "created_modified": "2026-06-19 10:32 +07",
 #     "size": "3.3 KiB"
+#   },
+#   {
+#     "filename": "diarization_artifact.json",
+#     "type": "file"
 #   }
 # ]
-# use `modal volume get speaker_diar_model_export file_name local_path`
-# where `local_path` can be ./onnx_ckpt/diar for onnx files, ./configs for yaml file
+# Download the manifest and every file it references into `.onnx_ckpt/diar`.
+# Relative manifest paths require the exported runtime assets to stay together.
 
 from pathlib import Path
 
@@ -90,20 +94,13 @@ def run():
                 module.forward = orig_forward
 
     def export():
-        import tempfile
         import types
         from typing import List, Tuple
 
         import torch
         from nemo.collections.asr.models import SortformerEncLabelModel
         from nemo.collections.asr.modules import AudioToMelSpectrogramPreprocessor
-        from nemo.collections.asr.parts.mixins.diarization import (
-            DiarizeConfig,
-            InternalDiarizeConfig,
-        )
-        from nemo.collections.asr.parts.utils.vad_utils import (
-            load_postprocessing_from_yaml,
-        )
+        from SDP.onnx.artifacts import write_diarization_artifact_manifest
 
         CHUNK_SIZE = 124
         RIGHT_CONTEXT = 1
@@ -284,6 +281,13 @@ def run():
             )
 
         export_preprocessor(diar_model, "/mydata/preprocessor.onnx")
+        write_diarization_artifact_manifest(
+            output_dir=Path("/mydata"),
+            source_model="nvidia/diar_streaming_sortformer_4spk-v2",
+            preprocessor=Path("/mydata/preprocessor.onnx"),
+            sortformer=Path("/mydata/model.onnx"),
+            config=Path("/mydata/diar_pretrained_config.yaml"),
+        )
 
     export()
     return None

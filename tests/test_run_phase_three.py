@@ -13,9 +13,18 @@ from unittest.mock import patch
 SCRIPT_PATH = Path(__file__).parents[1] / "run_phase_three.py"
 
 
+class FakeStreamingDiarizerOnnxService:
+    calls = []
+
+    @classmethod
+    def from_manifest(cls, manifest_path, **kwargs):
+        cls.calls.append((manifest_path, kwargs))
+        return object()
+
+
 def load_run_phase_three_module():
     fake_sdp = types.ModuleType("SDP")
-    fake_sdp.StreamingDiarizerOnnxService = lambda **kwargs: object()
+    fake_sdp.StreamingDiarizerOnnxService = FakeStreamingDiarizerOnnxService
     fake_sdp.load_encoder_modules_config = lambda path: object()
     fake_sdp.load_preprocessor_config = lambda path: object()
     fake_sdp.load_sortformer_modules_config = lambda path: object()
@@ -38,7 +47,7 @@ def load_run_phase_three_module():
 class RunPhaseThreeTest(unittest.TestCase):
     def test_import_does_not_start_audio_processing(self):
         fake_sdp = types.ModuleType("SDP")
-        fake_sdp.StreamingDiarizerOnnxService = lambda **kwargs: object()
+        fake_sdp.StreamingDiarizerOnnxService = FakeStreamingDiarizerOnnxService
         fake_sdp.load_encoder_modules_config = lambda path: object()
         fake_sdp.load_preprocessor_config = lambda path: object()
         fake_sdp.load_sortformer_modules_config = lambda path: object()
@@ -58,6 +67,28 @@ class RunPhaseThreeTest(unittest.TestCase):
                 del sys.modules["SDP"]
             else:
                 sys.modules["SDP"] = original_sdp
+
+    def test_create_streaming_service_loads_diarization_manifest(self):
+        module = load_run_phase_three_module()
+        FakeStreamingDiarizerOnnxService.calls.clear()
+
+        service = module.create_streaming_service(
+            ".onnx_ckpt/diar/diarization_artifact.json"
+        )
+
+        self.assertIsNotNone(service)
+        self.assertEqual(
+            FakeStreamingDiarizerOnnxService.calls,
+            [
+                (
+                    ".onnx_ckpt/diar/diarization_artifact.json",
+                    {
+                        "device": "cpu",
+                        "enable_async_queue": True,
+                    },
+                )
+            ],
+        )
 
     def test_initialize_results_file_overwrites_existing_content(self):
         module = load_run_phase_three_module()

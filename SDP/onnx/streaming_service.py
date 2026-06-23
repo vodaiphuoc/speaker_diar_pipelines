@@ -2,12 +2,21 @@ import asyncio
 import math
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import torch
 
-from SDP.onnx.asr.streaming import StreamingASREvent, StreamingASRSession
+from SDP.onnx.artifacts import (
+    load_asr_artifact_manifest,
+    load_diarization_artifact_manifest,
+)
+from SDP.onnx.asr.streaming import (
+    StreamingASREvent,
+    StreamingASRSession,
+    create_nemotron_streaming_session_from_manifest,
+)
 # from SDP.onnx.diarization.nemo_vad_utils import ts_vad_post_processing
 from SDP.onnx.diarization.post_processing import StreamingDiarizationPostProcessor
 from SDP.onnx.diarization.streaming import SortformerONNXRunner
@@ -16,6 +25,11 @@ from SDP.onnx.diarization.types import (
     PostProcessingParams,
     PreProcessorConfig,
     SortformerModuleConfig,
+)
+from SDP.onnx.diarization.utils import (
+    load_encoder_modules_config,
+    load_preprocessor_config,
+    load_sortformer_modules_config,
 )
 from SDP.onnx.preprocess.audio_preprocessing import (
     AudioToMelSpectrogramPreprocessorOnnxRunner,
@@ -41,6 +55,37 @@ class StreamingPipelineResult:
 
 
 class StreamingDiarizerOnnxService(object):
+    @classmethod
+    def from_manifest(
+        cls,
+        manifest_path: str | Path,
+        device: Literal["cpu", "cuda"] = "cpu",
+        post_processing_config: PostProcessingParams = PostProcessingParams(),
+        frame_len_in_secs: float = 0.08,
+        sample_rate: int = 16000,
+        left_offset: int = 8,
+        right_offset: int = 8,
+        enable_async_queue: bool = False,
+        async_queue_maxsize: int = 0,
+    ) -> "StreamingDiarizerOnnxService":
+        artifact = load_diarization_artifact_manifest(manifest_path)
+        config_path = str(artifact.config)
+        return cls(
+            modal_ckpt_path=str(artifact.sortformer.onnx),
+            preprocessor_ckpt_path=str(artifact.preprocessor.onnx),
+            device=device,
+            encoder_config=load_encoder_modules_config(config_path),
+            sortformer_config=load_sortformer_modules_config(config_path),
+            preprocessor_config=load_preprocessor_config(config_path),
+            post_processing_config=post_processing_config,
+            frame_len_in_secs=frame_len_in_secs,
+            sample_rate=sample_rate,
+            left_offset=left_offset,
+            right_offset=right_offset,
+            enable_async_queue=enable_async_queue,
+            async_queue_maxsize=async_queue_maxsize,
+        )
+
     def __init__(
         self,
         modal_ckpt_path: str,
@@ -236,6 +281,55 @@ class StreamingDiarizationASROnnxService:
         self.asr_session = asr_session
         self._stream_id: str | None = None
         self._flushed: bool = False
+
+    @classmethod
+    def from_manifests(
+        cls,
+        diarization_manifest_path: str | Path,
+        asr_manifest_path: str | Path,
+        device: Literal["cpu", "cuda"] = "cpu",
+        target_language: str = "vi-VN",
+        post_processing_config: PostProcessingParams = PostProcessingParams(),
+        frame_len_in_secs: float = 0.08,
+        sample_rate: int = 16000,
+        left_offset: int = 8,
+        right_offset: int = 8,
+        enable_async_queue: bool = False,
+        async_queue_maxsize: int = 0,
+    ) -> "StreamingDiarizationASROnnxService":
+        diarization_artifact = load_diarization_artifact_manifest(
+            diarization_manifest_path
+        )
+        asr_artifact = load_asr_artifact_manifest(asr_manifest_path)
+        if (
+            diarization_artifact.preprocessor.onnx
+            == asr_artifact.preprocessor.onnx
+        ):
+            raise ValueError(
+                "ASR and diarization require independent preprocessors; "
+                "their manifests resolve to the same ONNX file"
+            )
+
+        diarization_service = StreamingDiarizerOnnxService.from_manifest(
+            diarization_manifest_path,
+            device=device,
+            post_processing_config=post_processing_config,
+            frame_len_in_secs=frame_len_in_secs,
+            sample_rate=sample_rate,
+            left_offset=left_offset,
+            right_offset=right_offset,
+            enable_async_queue=enable_async_queue,
+            async_queue_maxsize=async_queue_maxsize,
+        )
+        asr_session = create_nemotron_streaming_session_from_manifest(
+            asr_manifest_path,
+            device=device,
+            target_language=target_language,
+        )
+        return cls(
+            diarization_service=diarization_service,
+            asr_session=asr_session,
+        )
 
     def process(
         self, audio: bytes, stream_id: str = "default"

@@ -3,6 +3,7 @@ set -euo pipefail
 
 ruff check \
   SDP/__init__.py \
+  SDP/onnx/artifacts.py \
   SDP/onnx/asr \
   SDP/onnx/preprocess/audio_preprocessing.py \
   SDP/onnx/streaming_service.py \

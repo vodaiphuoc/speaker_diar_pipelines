@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from SDP.onnx.asr import ASRModelPaths, create_nemotron_streaming_session
+from SDP.onnx.asr import create_nemotron_streaming_session_from_manifest
 
 
 @unittest.skipUnless(
@@ -90,15 +90,8 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
         gc.collect()
 
         asset_dir = Path(os.environ.get("ASR_ASSET_DIR", ".onnx_ckpt/asr"))
-        onnx_session = create_nemotron_streaming_session(
-            ASRModelPaths(
-                preprocessor=str(asset_dir / "preprocessor.onnx"),
-                encoder=str(asset_dir / "final_encoder-exported_asr.onnx"),
-                prompt_projection=str(asset_dir / "prompt_projection.onnx"),
-                decoder_joint=str(asset_dir / "decoder_joint-exported_asr.onnx"),
-                tokenizer=str(asset_dir / "tokenizer.model"),
-            ),
-            config_path=str(asset_dir / "asr_pretrained_config.yaml"),
+        onnx_session = create_nemotron_streaming_session_from_manifest(
+            asset_dir / "asr_artifact.json",
             target_language="vi-VN",
         )
         bytes_per_chunk = 16000 // 10 * 2

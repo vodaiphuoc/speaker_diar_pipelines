@@ -48,6 +48,8 @@ def export_assets(output_dir: Path, model_name: str) -> None:
     import onnx
     from omegaconf import OmegaConf
 
+    from SDP.onnx.artifacts import write_asr_artifact_manifest
+
     output_dir.mkdir(parents=True, exist_ok=True)
     model = nemo_asr.models.ASRModel.from_pretrained(
         model_name=model_name, map_location="cpu"
@@ -56,8 +58,10 @@ def export_assets(output_dir: Path, model_name: str) -> None:
     model.encoder.setup_streaming_params(att_context_size=[56, 1])
     model.encoder.export_cache_support = True
 
+    # save pretrained config
     OmegaConf.save(model._cfg, output_dir / "asr_pretrained_config.yaml")
 
+    # using native export of nemo-toolkit
     export_prefix = output_dir / "nemotron_streaming.onnx"
     model.export(
         str(export_prefix),
@@ -66,6 +70,8 @@ def export_assets(output_dir: Path, model_name: str) -> None:
         do_constant_folding=True,
     )
 
+    # load model proto with `chunk` weight files then save model in one file
+    #  and weight in one file
     encoder_source = output_dir / "encoder-nemotron_streaming.onnx"
     encoder_target = output_dir / "final_encoder-exported_asr.onnx"
     encoder_weights = output_dir / "final_encoder_weight-exported_asr.data"
@@ -78,11 +84,29 @@ def export_assets(output_dir: Path, model_name: str) -> None:
         size_threshold=0,
         location=encoder_weights.name,
     )
+
+    # clean up
     encoder_source.unlink()
 
+    # clean up `chunk` weight
+    files = [
+        f
+        for f in output_dir.iterdir()
+        if f.name.endswith(".weight")
+        or f.name.startswith("onnx_")
+        or f.name.startswith("Constant")
+    ]
+    for file_path in files:
+        if file_path.is_file():
+            file_path.unlink()
+
+    # rename decoder-joint model to correct format
     decoder_source = output_dir / "decoder_joint-nemotron_streaming.onnx"
     decoder_source.replace(output_dir / "decoder_joint-exported_asr.onnx")
 
+    # save pre-processor
+    # note that this different from speaker diarization export
+    # this preprocessor model may output both onnx and data files
     preprocessor = copy.deepcopy(model.preprocessor).cpu().eval()
     preprocessor.featurizer.dither = 0.0
     preprocessor.featurizer.pad_to = 0
@@ -100,8 +124,6 @@ def export_assets(output_dir: Path, model_name: str) -> None:
         dynamic_axes={
             "input_signal": {0: "batch", 1: "samples"},
             "length": {0: "batch"},
-            # "processed_signal": {0: "batch", 2: "frames"},
-            # "processed_length": {0: "batch"},
         },
         opset_version=20,
         dynamo=True,
@@ -129,7 +151,23 @@ def export_assets(output_dir: Path, model_name: str) -> None:
         dynamo=False,
     )
 
-    shutil.copy2(_find_sentencepiece_model(model), output_dir / "tokenizer.model")
+    model.save_tokenizers(output_dir)
+    tokenizer_target = output_dir / "tokenizer.model"
+    if not tokenizer_target.is_file():
+        tokenizer_source = _find_sentencepiece_model(model)
+        if tokenizer_source.resolve() != tokenizer_target.resolve():
+            shutil.copy2(tokenizer_source, tokenizer_target)
+
+    write_asr_artifact_manifest(
+        output_dir=output_dir,
+        source_model=model_name,
+        preprocessor=output_dir / "preprocessor.onnx",
+        encoder=encoder_target,
+        prompt_projection=output_dir / "prompt_projection.onnx",
+        decoder_joint=output_dir / "decoder_joint-exported_asr.onnx",
+        config=output_dir / "asr_pretrained_config.yaml",
+        tokenizer=tokenizer_target,
+    )
 
 
 def main() -> None:
