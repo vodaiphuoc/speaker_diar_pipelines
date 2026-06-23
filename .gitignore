@@ -1,8 +1,11 @@
 __pycache__/
 **/__pycache__/
+.ruff_cache/
 examples/
 .venv/
 .onnx_venv/
+.dev_venv/
 data/
 model.json
 *.onnx
+**/*.data
