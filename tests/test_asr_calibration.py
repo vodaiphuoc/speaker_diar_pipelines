@@ -26,7 +26,7 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
         audio_path = Path(
             os.environ.get(
                 "NEMOTRON_CALIBRATION_WAV",
-                "tests/fixtures/asr_calibration_vi.wav",
+                "tests/fixtures/bacsidatnhkhoavitadoc_1.wav",
             )
         )
         with wave.open(str(audio_path), "rb") as wav_file:
