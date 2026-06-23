@@ -90,21 +90,21 @@ def export_assets(output_dir: Path, model_name: str) -> None:
     signal_length = torch.tensor([32000], dtype=torch.int64)
     torch.onnx.export(
         preprocessor,
+        f=str(output_dir / "preprocessor.onnx"),
         kwargs={
             "input_signal": signal,
             "length": signal_length,
         },
-        f=str(output_dir / "preprocessor.onnx"),
         input_names=["input_signal", "length"],
         output_names=["processed_signal", "processed_length"],
         dynamic_axes={
             "input_signal": {0: "batch", 1: "samples"},
             "length": {0: "batch"},
-            "processed_signal": {0: "batch", 2: "frames"},
-            "processed_length": {0: "batch"},
+            # "processed_signal": {0: "batch", 2: "frames"},
+            # "processed_length": {0: "batch"},
         },
         opset_version=20,
-        dynamo=False,
+        dynamo=True,
     )
 
     prompt_projection = PromptProjectionWrapper(
