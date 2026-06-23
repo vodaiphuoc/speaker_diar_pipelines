@@ -1,3 +1,4 @@
+import gc
 import os
 import unittest
 import wave
@@ -25,7 +26,7 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
         audio_path = Path(
             os.environ.get(
                 "NEMOTRON_CALIBRATION_WAV",
-                "data/part1/bacsidatnhkhoavitadoc_1.wav",
+                "tests/fixtures/asr_calibration_vi.wav",
             )
         )
         with wave.open(str(audio_path), "rb") as wav_file:
@@ -76,14 +77,28 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
                 )
                 caches = channel_cache, time_cache, channel_cache_length
 
+        self.assertIsNotNone(previous_hypotheses)
+        native_hypothesis = previous_hypotheses[0]
+        native_tokens = tuple(int(token) for token in native_hypothesis.y_sequence)
+        native_text = native_hypothesis.text
+
+        del native_hypothesis
+        del previous_hypotheses
+        del caches
+        del streaming_buffer
+        del native
+        gc.collect()
+
+        asset_dir = Path(os.environ.get("ASR_ASSET_DIR", ".onnx_ckpt/asr"))
         onnx_session = create_nemotron_streaming_session(
             ASRModelPaths(
-                preprocessor=".onnx_ckpt/asr/preprocessor.onnx",
-                encoder=".onnx_ckpt/asr/final_encoder-exported_asr.onnx",
-                prompt_projection=".onnx_ckpt/asr/prompt_projection.onnx",
-                decoder_joint=".onnx_ckpt/asr/decoder_joint-exported_asr.onnx",
-                tokenizer=".onnx_ckpt/asr/tokenizer.model",
+                preprocessor=str(asset_dir / "preprocessor.onnx"),
+                encoder=str(asset_dir / "final_encoder-exported_asr.onnx"),
+                prompt_projection=str(asset_dir / "prompt_projection.onnx"),
+                decoder_joint=str(asset_dir / "decoder_joint-exported_asr.onnx"),
+                tokenizer=str(asset_dir / "tokenizer.model"),
             ),
+            config_path=str(asset_dir / "asr_pretrained_config.yaml"),
             target_language="vi-VN",
         )
         bytes_per_chunk = 16000 // 10 * 2
@@ -91,10 +106,8 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
             onnx_session.process_pcm(pcm[offset : offset + bytes_per_chunk])
         onnx_session.flush()
 
-        native_hypothesis = previous_hypotheses[0]
-        native_tokens = tuple(int(token) for token in native_hypothesis.y_sequence)
         self.assertEqual(onnx_session.token_ids, native_tokens)
-        self.assertEqual(onnx_session.full_text, native_hypothesis.text)
+        self.assertEqual(onnx_session.full_text, native_text)
 
 
 if __name__ == "__main__":
