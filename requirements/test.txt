@@ -1,4 +1,6 @@
 -r onnx.txt
 
+jsonschema>=4.23,<5
+onnx>=1.17,<2
 ruff==0.15.18
 scipy>=1.13,<2
