@@ -1,0 +1,8 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+av>=11
+numpy==1.26.4
+omegaconf==2.3.0
+onnxruntime==1.26.0
+sentencepiece==0.2.1
+torch==2.12.0
