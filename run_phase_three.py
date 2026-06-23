@@ -7,12 +7,7 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import resample_poly
 
-from SDP import (
-    StreamingDiarizerOnnxService,
-    load_encoder_modules_config,
-    load_preprocessor_config,
-    load_sortformer_modules_config,
-)
+from SDP import StreamingDiarizerOnnxService
 
 
 def stream_audio_file_bytes(
@@ -134,14 +129,10 @@ def update_event_results(events, output_path, audio_file):
         _write_results_file(output_path, data)
 
 
-def create_streaming_service(config_path):
-    return StreamingDiarizerOnnxService(
-        modal_ckpt_path=".onnx_ckpt/diar/model.onnx",
-        preprocessor_ckpt_path=".onnx_ckpt/diar/preprocessor.onnx",
+def create_streaming_service(manifest_path):
+    return StreamingDiarizerOnnxService.from_manifest(
+        manifest_path,
         device="cpu",
-        encoder_config=load_encoder_modules_config(config_path),
-        sortformer_config=load_sortformer_modules_config(config_path),
-        preprocessor_config=load_preprocessor_config(config_path),
         enable_async_queue=True,
     )
 
@@ -173,7 +164,7 @@ def process_audio_files(
 
 
 def main():
-    config_path = "configs/diar_pretrained_config.yaml"
+    manifest_path = ".onnx_ckpt/diar/diarization_artifact.json"
     audio_files = discover_audio_files("data/part1")
     output_path = Path("data_results/part1/results_phase3.json")
 
@@ -181,7 +172,7 @@ def main():
     process_audio_files(
         audio_files,
         output_path,
-        service_factory=lambda _: create_streaming_service(config_path),
+        service_factory=lambda _: create_streaming_service(manifest_path),
     )
 
 
