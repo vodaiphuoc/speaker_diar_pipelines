@@ -115,6 +115,8 @@ class DockerAndWorkflowTest(unittest.TestCase):
         self.assertIn("write_diarization_artifact_manifest(", diar_export)
         self.assertIn("asr_artifact.json", calibration_script)
         self.assertIn("load_asr_artifact_manifest", calibration_script)
+        self.assertIn("python -m exports.asr", calibration_script)
+        self.assertNotIn("python exports/asr.py", calibration_script)
         self.assertIn(
             "create_nemotron_streaming_session_from_manifest", calibration_test
         )
