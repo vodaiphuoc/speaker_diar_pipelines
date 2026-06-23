@@ -26,20 +26,30 @@ class DependencyBoundaryTest(unittest.TestCase):
 
     def test_dependency_profiles_are_layered(self):
         expected_includes = {
-            "test_requirements.txt": "-r onnx_requirements.txt",
-            "calibration_requirements.txt": "-r test_requirements.txt",
-            "dev_requirements.txt": "-r calibration_requirements.txt",
-            "requirements.txt": "-r dev_requirements.txt",
+            "requirements/test.txt": "-r onnx.txt",
+            "requirements/calibration.txt": "-r test.txt",
+            "requirements/dev.txt": "-r calibration.txt",
         }
         for filename, include in expected_includes.items():
             contents = (PROJECT_ROOT / filename).read_text(encoding="utf-8")
             self.assertIn(include, contents, filename)
 
         production_requirements = (
-            PROJECT_ROOT / "onnx_requirements.txt"
+            PROJECT_ROOT / "requirements" / "onnx.txt"
         ).read_text(encoding="utf-8")
         self.assertNotIn("nemo_toolkit", production_requirements)
-        self.assertIn("nemo_toolkit[asr]", (PROJECT_ROOT / "calibration_requirements.txt").read_text())
+        self.assertIn(
+            "nemo_toolkit[asr]",
+            (PROJECT_ROOT / "requirements" / "calibration.txt").read_text(),
+        )
+        for old_path in (
+            "onnx_requirements.txt",
+            "test_requirements.txt",
+            "calibration_requirements.txt",
+            "dev_requirements.txt",
+            "requirements.txt",
+        ):
+            self.assertFalse((PROJECT_ROOT / old_path).exists(), old_path)
 
 
 class CalibrationFixtureTest(unittest.TestCase):
@@ -58,22 +68,26 @@ class CalibrationFixtureTest(unittest.TestCase):
 
 class DockerAndWorkflowTest(unittest.TestCase):
     def test_cpu_dockerfiles_install_the_correct_dependency_profiles(self):
-        onnx_dockerfile = (
-            PROJECT_ROOT / "docker" / "Dockerfile_onnx_cpu"
-        ).read_text(encoding="utf-8")
-        calibration_dockerfile = (
-            PROJECT_ROOT / "docker" / "Dockerfile_calibration_cpu"
-        ).read_text(encoding="utf-8")
+        dockerfiles = {
+            path.name: path.read_text(encoding="utf-8")
+            for path in (PROJECT_ROOT / "docker").glob("Dockerfile*")
+        }
+        onnx_dockerfile = dockerfiles["Dockerfile_onnx_cpu"]
+        calibration_dockerfile = dockerfiles["Dockerfile_calibration_cpu"]
         onnx_test_script = (
             PROJECT_ROOT / "scripts" / "ci" / "run_onnx_tests.sh"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("test_requirements.txt", onnx_dockerfile)
+        self.assertIn("requirements/test.txt", onnx_dockerfile)
         self.assertIn("run_onnx_tests.sh", onnx_dockerfile)
         self.assertIn("python -m unittest discover", onnx_test_script)
-        self.assertIn("calibration_requirements.txt", calibration_dockerfile)
-        self.assertIn("exports/", calibration_dockerfile)
+        self.assertIn("requirements/calibration.txt", calibration_dockerfile)
         self.assertNotIn("COPY .onnx_ckpt", calibration_dockerfile)
+        for name, contents in dockerfiles.items():
+            self.assertIn("COPY requirements/ ./requirements/", contents, name)
+            self.assertIn("COPY exports/ ./exports/", contents, name)
+            self.assertIn("org.opencontainers.image.ref.name=\"development\"", contents, name)
+            self.assertIn("org.opencontainers.image.description=", contents, name)
 
     def test_github_workflow_has_fast_and_scheduled_calibration_jobs(self):
         workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -89,6 +103,9 @@ class DockerAndWorkflowTest(unittest.TestCase):
         self.assertIn("docker/Dockerfile_calibration_cpu", workflow)
         self.assertIn("RUN_NEMOTRON_CALIBRATION=1", workflow)
         self.assertIn("timeout-minutes: 300", workflow)
+        self.assertIn("requirements/onnx.txt", workflow)
+        self.assertIn("requirements/test.txt", workflow)
+        self.assertIn("requirements/calibration.txt", workflow)
 
 
 if __name__ == "__main__":
