@@ -23,12 +23,12 @@ class PromptProjectionWrapper(torch.nn.Module):
         prompt = torch.nn.functional.one_hot(
             prompt_index.to(torch.int64), num_classes=self.num_prompts
         )
-        prompt = prompt.to(encoded.dtype).unsqueeze(1).expand(
-            -1, encoded_time_major.shape[1], -1
+        prompt = (
+            prompt.to(encoded.dtype)
+            .unsqueeze(1)
+            .expand(-1, encoded_time_major.shape[1], -1)
         )
-        projected = self.prompt_kernel(
-            torch.cat((encoded_time_major, prompt), dim=-1)
-        )
+        projected = self.prompt_kernel(torch.cat((encoded_time_major, prompt), dim=-1))
         return projected.transpose(1, 2)
 
 
@@ -90,8 +90,11 @@ def export_assets(output_dir: Path, model_name: str) -> None:
     signal_length = torch.tensor([32000], dtype=torch.int64)
     torch.onnx.export(
         preprocessor,
-        (signal, signal_length),
-        str(output_dir / "preprocessor.onnx"),
+        kwargs={
+            "input_signal": signal,
+            "length": signal_length,
+        },
+        f=str(output_dir / "preprocessor.onnx"),
         input_names=["input_signal", "length"],
         output_names=["processed_signal", "processed_length"],
         dynamic_axes={
@@ -131,9 +134,7 @@ def export_assets(output_dir: Path, model_name: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--output-dir", type=Path, default=Path(".onnx_ckpt/asr")
-    )
+    parser.add_argument("--output-dir", type=Path, default=Path(".onnx_ckpt/asr"))
     parser.add_argument(
         "--model-name",
         default="nvidia/nemotron-3.5-asr-streaming-0.6b",
