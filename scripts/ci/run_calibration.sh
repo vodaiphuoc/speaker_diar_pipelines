@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ASR_ASSET_DIR="${ASR_ASSET_DIR:-/app/.onnx_ckpt/asr}"
-CALIBRATION_WAV="${NEMOTRON_CALIBRATION_WAV:-/app/tests/fixtures/asr_calibration_vi.wav}"
+CALIBRATION_WAV="${NEMOTRON_CALIBRATION_WAV:-/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav}"
 
 mkdir -p "${ASR_ASSET_DIR}"
 

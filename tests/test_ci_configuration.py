@@ -104,6 +104,9 @@ class DockerAndWorkflowTest(unittest.TestCase):
     def test_exports_and_ci_use_pipeline_artifact_manifests(self):
         asr_export = (PROJECT_ROOT / "exports" / "asr.py").read_text(encoding="utf-8")
         diar_export = (PROJECT_ROOT / "exports" / "diar.py").read_text(encoding="utf-8")
+        workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
         calibration_script = (
             PROJECT_ROOT / "scripts" / "ci" / "run_calibration.sh"
         ).read_text(encoding="utf-8")
@@ -117,6 +120,16 @@ class DockerAndWorkflowTest(unittest.TestCase):
         self.assertIn("load_asr_artifact_manifest", calibration_script)
         self.assertIn("python -m exports.asr", calibration_script)
         self.assertNotIn("python exports/asr.py", calibration_script)
+        self.assertIn(
+            "--env NEMOTRON_CALIBRATION_WAV=/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav",
+            workflow,
+        )
+        self.assertIn(
+            'CALIBRATION_WAV="${NEMOTRON_CALIBRATION_WAV:-/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav}"',
+            calibration_script,
+        )
+        self.assertIn("if: always()", workflow)
+        self.assertNotIn("if: failure()", workflow)
         self.assertIn(
             "create_nemotron_streaming_session_from_manifest", calibration_test
         )
