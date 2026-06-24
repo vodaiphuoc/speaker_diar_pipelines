@@ -1,0 +1,37 @@
+FROM pytorch/pytorch:2.12.0-cuda12.6-cudnn9-runtime
+
+LABEL org.opencontainers.image.ref.name="development" \
+      org.opencontainers.image.description="Native NeMo versus ONNX GPU calibration image; not production-ready"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    git \
+    libsndfile1 \
+    libsox-fmt-all \
+    sox \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/ ./requirements/
+
+RUN python -m pip install --upgrade pip && \
+    python -m pip install --no-cache-dir -r requirements/calibration.txt && \
+    python -m pip uninstall --yes onnxruntime && \
+    python -m pip install --no-cache-dir onnxruntime-gpu==1.26.0
+
+COPY SDP/ ./SDP/
+COPY configs/ ./configs/
+COPY exports/ ./exports/
+COPY tests/ ./tests/
+COPY docker/ ./docker/
+COPY scripts/ci/ ./scripts/ci/
+COPY run_phase_three.py ./
+
+CMD ["bash"]
