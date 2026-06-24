@@ -8,7 +8,7 @@ from typing import TypedDict
 
 import modal
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 print(f"{__file__}| ROOT_DIR: ", ROOT_DIR)
 CALIBRATION_LOG_PATH = Path("ci-logs/calibration.log")
 CALIBRATION_REPORT_PATH = Path("ci-logs/asr_calibration_report.json")
