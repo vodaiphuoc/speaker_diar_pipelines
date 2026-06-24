@@ -7,11 +7,11 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from SDP.onnx.asr import create_nemotron_streaming_session_from_manifest
 from SDP.onnx.asr.utils.calibration_report import (
     build_asr_calibration_report,
     write_asr_calibration_report,
 )
-from SDP.onnx.asr import create_nemotron_streaming_session_from_manifest
 
 
 def _int_sequence_or_none(value):
@@ -25,6 +25,7 @@ def _int_sequence_or_none(value):
 
 
 def _extract_native_transcription_texts(transcriptions):
+    print("transcriptions: ", transcriptions)
     if transcriptions is None:
         return []
     if isinstance(transcriptions, str):
@@ -86,7 +87,7 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
             self.assertEqual(wav_file.getsampwidth(), 2)
             pcm = wav_file.readframes(wav_file.getnframes())
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-
+        print("audio shape: ", audio.shape)
         native = nemo_asr.models.ASRModel.from_pretrained(
             "nvidia/nemotron-3.5-asr-streaming-0.6b",
             map_location="cpu",
@@ -102,12 +103,13 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
         )
         streaming_buffer.append_audio(audio)
 
+        streaming_buffer_iter = iter(streaming_buffer)
         caches = native.encoder.get_initial_cache_state(batch_size=1)
         pred_out_stream = None
         transcribed_texts = None
         previous_hypotheses = None
         with torch.inference_mode():
-            for chunk, chunk_length in streaming_buffer:
+            for chunk, chunk_length in streaming_buffer_iter:
                 (
                     pred_out_stream,
                     transcribed_texts,
@@ -162,9 +164,7 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
         onnx_events.extend(onnx_session.flush())
 
         onnx_token_times = tuple(
-            token_time
-            for event in onnx_events
-            for token_time in event.token_times
+            token_time for event in onnx_events for token_time in event.token_times
         )
         report = build_asr_calibration_report(
             audio_file=str(audio_path),
