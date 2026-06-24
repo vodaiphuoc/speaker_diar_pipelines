@@ -10,6 +10,8 @@ import modal
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 print(f"{__file__}| ROOT_DIR: ", ROOT_DIR)
+print(f"{__file__}| ROOT_DIR: ", Path(__file__).resolve().parent)
+print(f"{__file__}| ROOT_DIR: ", Path(__file__).resolve().parent.parent)
 CALIBRATION_LOG_PATH = Path("ci-logs/calibration.log")
 CALIBRATION_REPORT_PATH = Path("ci-logs/asr_calibration_report.json")
 CALIBRATION_COMMAND_DISPLAY = "bash scripts/ci/run_calibration.sh"
@@ -80,7 +82,7 @@ def run_calibration_remote() -> CalibrationResult:
 def main() -> None:
     CALIBRATION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     result = run_calibration_remote.remote()
-
+    print("result: ", result)
     return_code = result["returncode"]
     stdout = result["stdout"]
     stderr = result["stderr"]

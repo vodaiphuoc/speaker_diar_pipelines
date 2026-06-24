@@ -24,8 +24,8 @@ COPY requirements/ ./requirements/
 
 RUN python -m pip install --upgrade pip && \
     python -m pip install --no-cache-dir -r requirements/calibration.txt && \
-    python -m pip uninstall --yes onnxruntime
 
+#python -m pip uninstall --yes onnxruntime
 #python -m pip install --no-cache-dir onnxruntime-gpu==1.26.0
 
 COPY SDP/ ./SDP/
