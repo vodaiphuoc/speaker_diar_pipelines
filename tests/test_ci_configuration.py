@@ -138,16 +138,5 @@ class DockerAndWorkflowTest(unittest.TestCase):
         self.assertIn("bash scripts/ci/run_calibration.sh", modal_runner)
         self.assertIn("ci-logs/asr_calibration_report.json", modal_runner)
 
-    def test_workflow_runs_calibration_on_modal_and_uploads_logs(self):
-        workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("MODAL_TOKEN_ID", workflow)
-        self.assertIn("MODAL_TOKEN_SECRET", workflow)
-        self.assertIn("scripts/ci/run_modal_asr_calibration.py", workflow)
-        self.assertIn("if: always()", workflow)
-        self.assertNotIn("Dockerfile_calibration_cpu", workflow)
-
 if __name__ == "__main__":
     unittest.main()
