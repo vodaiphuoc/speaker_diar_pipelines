@@ -88,9 +88,11 @@ jobs:
             --volume "${PWD}/.ci-cache/huggingface:/root/.cache/huggingface" \
             --volume "${PWD}/.ci-cache/torch:/root/.cache/torch" \
             --volume "${PWD}/.onnx_ckpt/asr:/app/.onnx_ckpt/asr" \
+            --volume "${PWD}/ci-logs:/app/ci-logs" \
             --env ASR_ASSET_DIR=/app/.onnx_ckpt/asr \
             --env RUN_NEMOTRON_CALIBRATION=1 \
             --env NEMOTRON_CALIBRATION_WAV=/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav \
+            --env NEMOTRON_CALIBRATION_REPORT=/app/ci-logs/asr_calibration_report.json \
             speaker-diar-calibration:${{ github.sha }} \
             bash scripts/ci/run_calibration.sh \
             2>&1 | tee ci-logs/calibration.log

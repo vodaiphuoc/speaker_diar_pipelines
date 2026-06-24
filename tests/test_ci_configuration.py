@@ -101,5 +101,19 @@ class DockerAndWorkflowTest(unittest.TestCase):
             )
             self.assertIn("org.opencontainers.image.description=", contents, name)
 
+    def test_calibration_script_exports_transcript_report_path(self):
+        calibration_script = (
+            PROJECT_ROOT / "scripts" / "ci" / "run_calibration.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'CALIBRATION_REPORT="${NEMOTRON_CALIBRATION_REPORT:-/app/ci-logs/asr_calibration_report.json}"',
+            calibration_script,
+        )
+        self.assertIn(
+            'NEMOTRON_CALIBRATION_REPORT="${CALIBRATION_REPORT}"',
+            calibration_script,
+        )
+
 if __name__ == "__main__":
     unittest.main()

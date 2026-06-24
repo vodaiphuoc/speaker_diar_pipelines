@@ -7,7 +7,21 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from SDP.onnx.asr.utils.calibration_report import (
+    build_asr_calibration_report,
+    write_asr_calibration_report,
+)
 from SDP.onnx.asr import create_nemotron_streaming_session_from_manifest
+
+
+def _int_sequence_or_none(value):
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        return tuple(int(item) for item in value.detach().cpu().tolist())
+    if isinstance(value, (list, tuple)):
+        return tuple(int(item) for item in value)
+    return None
 
 
 @unittest.skipUnless(
@@ -81,6 +95,9 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
         native_hypothesis = previous_hypotheses[0]
         native_tokens = tuple(int(token) for token in native_hypothesis.y_sequence)
         native_text = native_hypothesis.text
+        native_token_timestamps = _int_sequence_or_none(
+            getattr(native_hypothesis, "timestamp", None)
+        )
 
         del native_hypothesis
         del previous_hypotheses
@@ -95,9 +112,34 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
             target_language="vi-VN",
         )
         bytes_per_chunk = 16000 // 10 * 2
+        onnx_events = []
         for offset in range(0, len(pcm), bytes_per_chunk):
-            onnx_session.process_pcm(pcm[offset : offset + bytes_per_chunk])
-        onnx_session.flush()
+            onnx_events.extend(
+                onnx_session.process_pcm(pcm[offset : offset + bytes_per_chunk])
+            )
+        onnx_events.extend(onnx_session.flush())
+
+        onnx_token_times = tuple(
+            token_time
+            for event in onnx_events
+            for token_time in event.token_times
+        )
+        report = build_asr_calibration_report(
+            audio_file=str(audio_path),
+            native_text=native_text,
+            native_token_ids=native_tokens,
+            native_token_timestamps=native_token_timestamps,
+            onnx_text=onnx_session.full_text,
+            onnx_token_ids=onnx_session.token_ids,
+            onnx_token_times=onnx_token_times,
+        )
+        write_asr_calibration_report(
+            os.environ.get(
+                "NEMOTRON_CALIBRATION_REPORT",
+                "ci-logs/asr_calibration_report.json",
+            ),
+            report,
+        )
 
         self.assertEqual(onnx_session.token_ids, native_tokens)
         self.assertEqual(onnx_session.full_text, native_text)
