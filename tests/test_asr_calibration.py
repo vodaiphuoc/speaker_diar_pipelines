@@ -3,8 +3,8 @@ import os
 import unittest
 import wave
 from pathlib import Path
+from unittest import mock
 
-import numpy as np
 import torch
 
 from SDP.onnx.asr import create_nemotron_streaming_session_from_manifest
@@ -24,8 +24,26 @@ def _int_sequence_or_none(value):
     return None
 
 
+def _resolve_native_device():
+    requested_device = os.environ.get("NEMOTRON_NATIVE_DEVICE", "cpu").strip()
+    if not requested_device:
+        requested_device = "cpu"
+    device = torch.device(requested_device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA was requested for native NeMo calibration via "
+            "NEMOTRON_NATIVE_DEVICE, but torch.cuda.is_available() is false."
+        )
+    return device
+
+
+def _move_tensor_to_device(value, device):
+    if isinstance(value, torch.Tensor):
+        return value.to(device)
+    return value
+
+
 def _extract_native_transcription_texts(transcriptions):
-    print("transcriptions: ", transcriptions)
     if transcriptions is None:
         return []
     if isinstance(transcriptions, str):
@@ -62,6 +80,31 @@ class NativeTranscriptionExtractionTest(unittest.TestCase):
         self.assertEqual(_extract_native_transcription_texts(None), [])
 
 
+class NativeDeviceResolutionTest(unittest.TestCase):
+    def test_defaults_to_cpu(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(_resolve_native_device(), torch.device("cpu"))
+
+    def test_accepts_explicit_cpu(self):
+        with mock.patch.dict(os.environ, {"NEMOTRON_NATIVE_DEVICE": "cpu"}):
+            self.assertEqual(_resolve_native_device(), torch.device("cpu"))
+
+    def test_accepts_cuda_when_available(self):
+        with (
+            mock.patch.dict(os.environ, {"NEMOTRON_NATIVE_DEVICE": "cuda"}),
+            mock.patch("torch.cuda.is_available", return_value=True),
+        ):
+            self.assertEqual(_resolve_native_device(), torch.device("cuda"))
+
+    def test_rejects_cuda_when_unavailable(self):
+        with (
+            mock.patch.dict(os.environ, {"NEMOTRON_NATIVE_DEVICE": "cuda"}),
+            mock.patch("torch.cuda.is_available", return_value=False),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "CUDA was requested"):
+                _resolve_native_device()
+
+
 @unittest.skipUnless(
     os.environ.get("RUN_NEMOTRON_CALIBRATION") == "1",
     "Set RUN_NEMOTRON_CALIBRATION=1 to run the NeMo/ONNX parity test",
@@ -86,12 +129,12 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
             self.assertEqual(wav_file.getnchannels(), 1)
             self.assertEqual(wav_file.getsampwidth(), 2)
             pcm = wav_file.readframes(wav_file.getnframes())
-        audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        print("audio shape: ", audio.shape)
+        native_device = _resolve_native_device()
         native = nemo_asr.models.ASRModel.from_pretrained(
             "nvidia/nemotron-3.5-asr-streaming-0.6b",
-            map_location="cpu",
+            map_location=native_device,
         )
+        native = native.to(device=native_device)
         native.eval()
         native.encoder.setup_streaming_params(att_context_size=[56, 1])
         native.set_inference_prompt("vi-VN")
@@ -101,15 +144,20 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
             online_normalization=False,
             pad_and_drop_preencoded=True,
         )
-        streaming_buffer.append_audio(audio)
+        streaming_buffer.append_audio_file(audio_path)
 
         streaming_buffer_iter = iter(streaming_buffer)
-        caches = native.encoder.get_initial_cache_state(batch_size=1)
+        caches = tuple(
+            _move_tensor_to_device(cache, native_device)
+            for cache in native.encoder.get_initial_cache_state(batch_size=1)
+        )
         pred_out_stream = None
         transcribed_texts = None
         previous_hypotheses = None
         with torch.inference_mode():
             for chunk, chunk_length in streaming_buffer_iter:
+                chunk = _move_tensor_to_device(chunk, native_device)
+                chunk_length = _move_tensor_to_device(chunk_length, native_device)
                 (
                     pred_out_stream,
                     transcribed_texts,

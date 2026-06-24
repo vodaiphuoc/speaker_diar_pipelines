@@ -48,54 +48,38 @@ jobs:
         run: docker run --rm speaker-diar-onnx-tests:${{ github.sha }}
 
   nemotron-calibration:
-    name: Native NeMo versus ONNX calibration
+    name: Native NeMo versus ONNX calibration on Modal
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Free runner disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
-          docker system prune --all --force
-          df -h
-
-      - name: Restore model download caches
-        uses: actions/cache@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          path: |
-            .ci-cache/huggingface
-            .ci-cache/torch
-          key: nemotron-3.5-asr-${{ runner.os }}-${{ hashFiles('requirements/onnx.txt', 'requirements/test.txt', 'requirements/calibration.txt') }}
+          python-version: "3.12"
 
-      - name: Build calibration image
-        run: |
-          docker build \
-            --file docker/Dockerfile_calibration_cpu \
-            --tag speaker-diar-calibration:${{ github.sha }} \
-            .
+      - name: Install Modal client
+        run: python -m pip install --upgrade pip modal
 
-      - name: Export ONNX assets and run parity tests
+      - name: Run Modal GPU calibration
         run: |
           set -o pipefail
-          mkdir -p \
-            .ci-cache/huggingface \
-            .ci-cache/torch \
-            .onnx_ckpt/asr \
-            ci-logs
-          docker run --rm \
-            --volume "${PWD}/.ci-cache/huggingface:/root/.cache/huggingface" \
-            --volume "${PWD}/.ci-cache/torch:/root/.cache/torch" \
-            --volume "${PWD}/.onnx_ckpt/asr:/app/.onnx_ckpt/asr" \
-            --volume "${PWD}/ci-logs:/app/ci-logs" \
-            --env ASR_ASSET_DIR=/app/.onnx_ckpt/asr \
-            --env RUN_NEMOTRON_CALIBRATION=1 \
-            --env NEMOTRON_CALIBRATION_WAV=/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav \
-            --env NEMOTRON_CALIBRATION_REPORT=/app/ci-logs/asr_calibration_report.json \
-            speaker-diar-calibration:${{ github.sha }} \
-            bash scripts/ci/run_calibration.sh \
-            2>&1 | tee ci-logs/calibration.log
+          mkdir -p ci-logs
+          trap 'if [[ -f ci-logs/modal.log && ! -f ci-logs/calibration.log ]]; then cp ci-logs/modal.log ci-logs/calibration.log; fi' EXIT
+          if [[ -z "${MODAL_TOKEN_ID}" || -z "${MODAL_TOKEN_SECRET}" ]]; then
+            {
+              echo "Skipping Modal calibration because MODAL_TOKEN_ID or MODAL_TOKEN_SECRET is not configured."
+              echo "Configure GitHub Actions secrets to enable the GPU calibration job."
+            } | tee ci-logs/calibration.log
+            exit 0
+          fi
+          modal run scripts/ci/run_modal_asr_calibration.py \
+            2>&1 | tee ci-logs/modal.log
 
       - name: Upload calibration logs
         if: always()

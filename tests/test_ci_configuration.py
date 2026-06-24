@@ -93,6 +93,10 @@ class DockerAndWorkflowTest(unittest.TestCase):
         self.assertIn("python -m unittest discover", onnx_test_script)
         self.assertIn("requirements/calibration.txt", calibration_dockerfile)
         self.assertNotIn("COPY .onnx_ckpt", calibration_dockerfile)
+        calibration_gpu_dockerfile = dockerfiles["Dockerfile_calibration_gpu"]
+        self.assertIn("pytorch/pytorch", calibration_gpu_dockerfile)
+        self.assertIn("requirements/calibration.txt", calibration_gpu_dockerfile)
+        self.assertIn("onnxruntime-gpu==1.26.0", calibration_gpu_dockerfile)
         for name, contents in dockerfiles.items():
             self.assertIn("COPY requirements/ ./requirements/", contents, name)
             self.assertIn("COPY exports/ ./exports/", contents, name)
@@ -114,6 +118,36 @@ class DockerAndWorkflowTest(unittest.TestCase):
             'NEMOTRON_CALIBRATION_REPORT="${CALIBRATION_REPORT}"',
             calibration_script,
         )
+        self.assertIn(
+            'CALIBRATION_TEST_TARGET="${NEMOTRON_CALIBRATION_TEST_TARGET:-tests.test_asr_calibration.NemotronONNXCalibrationTest}"',
+            calibration_script,
+        )
+        self.assertIn('python -m unittest "${CALIBRATION_TEST_TARGET}" -v', calibration_script)
+        self.assertNotIn('python -m unittest discover -s tests -p "test_*.py"', calibration_script)
+
+    def test_modal_calibration_runner_uses_gpu_dockerfile_and_device_env(self):
+        modal_runner = (
+            PROJECT_ROOT / "scripts" / "ci" / "run_modal_asr_calibration.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("modal.Image.from_dockerfile", modal_runner)
+        self.assertIn("Dockerfile_calibration_gpu", modal_runner)
+        self.assertIn("MODAL_CALIBRATION_GPU", modal_runner)
+        self.assertIn("NEMOTRON_NATIVE_DEVICE", modal_runner)
+        self.assertIn("cuda", modal_runner)
+        self.assertIn("bash scripts/ci/run_calibration.sh", modal_runner)
+        self.assertIn("ci-logs/asr_calibration_report.json", modal_runner)
+
+    def test_workflow_runs_calibration_on_modal_and_uploads_logs(self):
+        workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("MODAL_TOKEN_ID", workflow)
+        self.assertIn("MODAL_TOKEN_SECRET", workflow)
+        self.assertIn("scripts/ci/run_modal_asr_calibration.py", workflow)
+        self.assertIn("if: always()", workflow)
+        self.assertNotIn("Dockerfile_calibration_cpu", workflow)
 
 if __name__ == "__main__":
     unittest.main()
