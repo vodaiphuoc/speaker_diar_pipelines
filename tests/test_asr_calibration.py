@@ -24,6 +24,43 @@ def _int_sequence_or_none(value):
     return None
 
 
+def _extract_native_transcription_texts(transcriptions):
+    if transcriptions is None:
+        return []
+    if isinstance(transcriptions, str):
+        return [transcriptions]
+    if hasattr(transcriptions, "text"):
+        return [transcriptions.text]
+
+    texts = []
+    for transcription in transcriptions:
+        if hasattr(transcription, "text"):
+            texts.append(transcription.text)
+        else:
+            texts.append(transcription)
+    return texts
+
+
+class NativeTranscriptionExtractionTest(unittest.TestCase):
+    def test_extracts_text_from_hypothesis_like_values(self):
+        class HypothesisLike:
+            text = "xin chào"
+
+        self.assertEqual(
+            _extract_native_transcription_texts([HypothesisLike()]),
+            ["xin chào"],
+        )
+
+    def test_preserves_plain_string_transcriptions(self):
+        self.assertEqual(
+            _extract_native_transcription_texts(["xin chào"]),
+            ["xin chào"],
+        )
+
+    def test_handles_missing_transcriptions(self):
+        self.assertEqual(_extract_native_transcription_texts(None), [])
+
+
 @unittest.skipUnless(
     os.environ.get("RUN_NEMOTRON_CALIBRATION") == "1",
     "Set RUN_NEMOTRON_CALIBRATION=1 to run the NeMo/ONNX parity test",
@@ -66,12 +103,14 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
         streaming_buffer.append_audio(audio)
 
         caches = native.encoder.get_initial_cache_state(batch_size=1)
+        pred_out_stream = None
+        transcribed_texts = None
         previous_hypotheses = None
         with torch.inference_mode():
             for chunk, chunk_length in streaming_buffer:
                 (
-                    _,
-                    _,
+                    pred_out_stream,
+                    transcribed_texts,
                     channel_cache,
                     time_cache,
                     channel_cache_length,
@@ -84,6 +123,7 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
                     cache_last_channel_len=caches[2],
                     keep_all_outputs=streaming_buffer.is_buffer_empty(),
                     previous_hypotheses=previous_hypotheses,
+                    previous_pred_out=pred_out_stream,
                     drop_extra_pre_encoded=(
                         native.encoder.streaming_cfg.drop_extra_pre_encoded
                     ),
@@ -91,15 +131,17 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
                 )
                 caches = channel_cache, time_cache, channel_cache_length
 
-        self.assertIsNotNone(previous_hypotheses)
-        native_hypothesis = previous_hypotheses[0]
-        native_tokens = tuple(int(token) for token in native_hypothesis.y_sequence)
-        native_text = native_hypothesis.text
-        native_token_timestamps = _int_sequence_or_none(
-            getattr(native_hypothesis, "timestamp", None)
-        )
+        native_transcriptions = _extract_native_transcription_texts(transcribed_texts)
+        native_text = native_transcriptions[0] if native_transcriptions else ""
+        native_tokens = ()
+        native_token_timestamps = None
+        if previous_hypotheses:
+            native_hypothesis = previous_hypotheses[0]
+            native_tokens = tuple(int(token) for token in native_hypothesis.y_sequence)
+            native_token_timestamps = _int_sequence_or_none(
+                getattr(native_hypothesis, "timestamp", None)
+            )
 
-        del native_hypothesis
         del previous_hypotheses
         del caches
         del streaming_buffer
@@ -141,6 +183,25 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
             report,
         )
 
+        self.assertTrue(
+            native_text.strip(),
+            "Native NeMo streaming transcript is empty; check transcribed_texts "
+            "from conformer_stream_step.",
+        )
+        self.assertTrue(
+            onnx_session.full_text.strip(),
+            "ONNX streaming transcript is empty for calibration fixture.",
+        )
+        self.assertGreater(
+            len(native_tokens),
+            0,
+            "Native NeMo streaming token sequence is empty.",
+        )
+        self.assertGreater(
+            len(onnx_session.token_ids),
+            0,
+            "ONNX streaming token sequence is empty.",
+        )
         self.assertEqual(onnx_session.token_ids, native_tokens)
         self.assertEqual(onnx_session.full_text, native_text)
 
