@@ -81,11 +81,14 @@ def main() -> None:
     CALIBRATION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     result = run_calibration_remote.remote()
 
+    return_code = result["returncode"]
+    stdout = result["stdout"]
+    stderr = result["stderr"]
     log_text = (
         f"Remote command: {CALIBRATION_COMMAND_DISPLAY}\n"
-        f"Return code: {result['returncode']}\n\n"
-        f"STDOUT:\n{result['stdout']}\n"
-        f"STDERR:\n{result['stderr']}\n"
+        f"Return code: {return_code}\n\n"
+        f"STDOUT:\n{stdout}\n"
+        f"STDERR:\n{stderr}\n"
     )
     CALIBRATION_LOG_PATH.write_text(log_text, encoding="utf-8")
 
@@ -93,4 +96,4 @@ def main() -> None:
         CALIBRATION_REPORT_PATH.write_text(result["report"], encoding="utf-8")
 
     if result["returncode"] != 0:
-        raise SystemExit(result["returncode"])
+        raise SystemExit(return_code)
