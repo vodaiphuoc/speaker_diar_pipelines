@@ -52,6 +52,7 @@ jobs:
   nemotron-calibration:
     name: Native NeMo versus ONNX calibration on Modal
     runs-on: ubuntu-latest
+    environment: TEST-CI-GPU
     timeout-minutes: 300
     env:
       MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
