@@ -1,12 +1,13 @@
 import gc
 import os
+import sys
 import unittest
-import wave
 from pathlib import Path
 from unittest import mock
 
 import torch
 
+from SDP import wav_to_mono_pcm16_bytes
 from SDP.onnx.asr import create_nemotron_streaming_session_from_manifest
 from SDP.onnx.asr.utils.calibration_report import (
     build_asr_calibration_report,
@@ -60,6 +61,10 @@ def _extract_native_transcription_texts(transcriptions):
     return texts
 
 
+def _load_calibration_pcm(audio_path: Path) -> bytes:
+    return wav_to_mono_pcm16_bytes(audio_path, target_sr=16000)
+
+
 class NativeTranscriptionExtractionTest(unittest.TestCase):
     def test_extracts_text_from_hypothesis_like_values(self):
         class HypothesisLike:
@@ -105,6 +110,21 @@ class NativeDeviceResolutionTest(unittest.TestCase):
                 _resolve_native_device()
 
 
+class CalibrationAudioLoadingTest(unittest.TestCase):
+    def test_load_calibration_pcm_uses_shared_16k_resampling_helper(self):
+        audio_path = Path("example_8k.wav")
+
+        with mock.patch.object(
+            sys.modules[__name__],
+            "wav_to_mono_pcm16_bytes",
+            return_value=b"pcm",
+        ) as loader:
+            pcm = _load_calibration_pcm(audio_path)
+
+        loader.assert_called_once_with(audio_path, target_sr=16000)
+        self.assertEqual(pcm, b"pcm")
+
+
 @unittest.skipUnless(
     os.environ.get("RUN_NEMOTRON_CALIBRATION") == "1",
     "Set RUN_NEMOTRON_CALIBRATION=1 to run the NeMo/ONNX parity test",
@@ -124,11 +144,7 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
                 "tests/fixtures/bacsidatnhkhoavitadoc_1.wav",
             )
         )
-        with wave.open(str(audio_path), "rb") as wav_file:
-            # self.assertEqual(wav_file.getframerate(), 16000)
-            self.assertEqual(wav_file.getnchannels(), 1)
-            self.assertEqual(wav_file.getsampwidth(), 2)
-            pcm = wav_file.readframes(wav_file.getnframes())
+        pcm = _load_calibration_pcm(audio_path)
         native_device = _resolve_native_device()
         native = nemo_asr.models.ASRModel.from_pretrained(
             "nvidia/nemotron-3.5-asr-streaming-0.6b",

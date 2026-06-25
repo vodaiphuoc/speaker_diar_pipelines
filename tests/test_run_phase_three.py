@@ -22,12 +22,18 @@ class FakeStreamingDiarizerOnnxService:
         return object()
 
 
+def fake_wav_to_mono_pcm16_bytes(path, target_sr=16000):
+    with wave.open(str(path), "rb") as wav_file:
+        return wav_file.readframes(wav_file.getnframes())
+
+
 def load_run_phase_three_module():
     fake_sdp = types.ModuleType("SDP")
     fake_sdp.StreamingDiarizerOnnxService = FakeStreamingDiarizerOnnxService
     fake_sdp.load_encoder_modules_config = lambda path: object()
     fake_sdp.load_preprocessor_config = lambda path: object()
     fake_sdp.load_sortformer_modules_config = lambda path: object()
+    fake_sdp.wav_to_mono_pcm16_bytes = fake_wav_to_mono_pcm16_bytes
 
     spec = importlib.util.spec_from_file_location("run_phase_three_test", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
@@ -51,6 +57,7 @@ class RunPhaseThreeTest(unittest.TestCase):
         fake_sdp.load_encoder_modules_config = lambda path: object()
         fake_sdp.load_preprocessor_config = lambda path: object()
         fake_sdp.load_sortformer_modules_config = lambda path: object()
+        fake_sdp.wav_to_mono_pcm16_bytes = fake_wav_to_mono_pcm16_bytes
 
         spec = importlib.util.spec_from_file_location("run_phase_three_test", SCRIPT_PATH)
         module = importlib.util.module_from_spec(spec)
@@ -154,6 +161,29 @@ class RunPhaseThreeTest(unittest.TestCase):
 
             chunks = list(module.stream_audio_file_bytes(audio_path))
 
+            self.assertEqual(len(chunks), 1)
+            self.assertEqual(chunks[0][0], 0)
+            self.assertEqual(len(chunks[0][1]), 5120)
+
+    def test_stream_audio_file_bytes_resamples_with_shared_librosa_helper(self):
+        module = load_run_phase_three_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audio_path = Path(temp_dir) / "example_8k.wav"
+            with wave.open(str(audio_path), "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(8000)
+                wav_file.writeframes(b"\x00\x00" * 1280)
+
+            with patch.object(
+                module,
+                "wav_to_mono_pcm16_bytes",
+                return_value=b"\x00\x00" * 2560,
+            ) as wav_to_pcm:
+                chunks = list(module.stream_audio_file_bytes(audio_path))
+
+            wav_to_pcm.assert_called_once_with(audio_path, target_sr=16000)
             self.assertEqual(len(chunks), 1)
             self.assertEqual(chunks[0][0], 0)
             self.assertEqual(len(chunks[0][1]), 5120)

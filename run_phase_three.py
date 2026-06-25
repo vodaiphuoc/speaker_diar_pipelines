@@ -1,13 +1,9 @@
 import json
 import os
 import tempfile
-import wave
 from pathlib import Path
 
-import numpy as np
-from scipy.signal import resample_poly
-
-from SDP import StreamingDiarizerOnnxService
+from SDP import StreamingDiarizerOnnxService, wav_to_mono_pcm16_bytes
 
 
 def stream_audio_file_bytes(
@@ -17,44 +13,15 @@ def stream_audio_file_bytes(
     Reads a WAV file, resamples it to target_sample_rate (16kHz) if needed,
     and yields raw PCM bytes in chunks of chunk_duration_ms.
     """
-    with wave.open(str(file_path), "rb") as wav_file:
-        original_sample_rate = wav_file.getframerate()
-        num_channels = wav_file.getnchannels()
-        sample_width = wav_file.getsampwidth()
-        num_frames = wav_file.getnframes()
+    pcm_bytes = wav_to_mono_pcm16_bytes(file_path, target_sr=target_sample_rate)
 
-        raw_data = wav_file.readframes(num_frames)
-
-    if sample_width == 2:
-        dtype = np.int16
-    elif sample_width == 4:
-        dtype = np.int32
-    else:
-        raise ValueError(f"Unsupported sample width: {sample_width} bytes")
-
-    audio_data = np.frombuffer(raw_data, dtype=dtype)
-
-    # multi-channel audio stereo to mono by averaging channels
-    if num_channels > 1:
-        audio_data = audio_data.reshape(-1, num_channels)
-        audio_data = audio_data.mean(axis=1).astype(dtype)
-
-    # Resample if the rate doesn't match 16,000 Hz
-    if original_sample_rate != target_sample_rate:
-        audio_data = resample_poly(
-            audio_data, target_sample_rate, original_sample_rate
-        ).astype(dtype)
-
-    # Convert back to raw bytes for streaming simulation
-    resampled_bytes = audio_data.tobytes()
-
-    bytes_per_sample = dtype().itemsize
+    bytes_per_sample = 2
     samples_per_chunk = int(target_sample_rate * (chunk_duration_ms / 1000))
     bytes_per_chunk = samples_per_chunk * bytes_per_sample
 
     # Yield the chunks
-    for ith, i in enumerate(range(0, len(resampled_bytes), bytes_per_chunk)):
-        chunk = resampled_bytes[i : i + bytes_per_chunk]
+    for ith, i in enumerate(range(0, len(pcm_bytes), bytes_per_chunk)):
+        chunk = pcm_bytes[i : i + bytes_per_chunk]
         # Skip the final chunk if it's incomplete (optional, depending on your model requirements)
         if len(chunk) == bytes_per_chunk:
             yield ith, chunk

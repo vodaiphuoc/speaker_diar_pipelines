@@ -122,8 +122,16 @@ class DockerAndWorkflowTest(unittest.TestCase):
             'CALIBRATION_TEST_TARGET="${NEMOTRON_CALIBRATION_TEST_TARGET:-tests.test_asr_calibration.NemotronONNXCalibrationTest}"',
             calibration_script,
         )
-        self.assertIn('python -m unittest "${CALIBRATION_TEST_TARGET}" -v', calibration_script)
-        self.assertNotIn('python -m unittest discover -s tests -p "test_*.py"', calibration_script)
+        self.assertIn(
+            'python -m unittest "${CALIBRATION_TEST_TARGET}" -v',
+            calibration_script,
+        )
+        self.assertIn("=== Calibration unittest environment ===", calibration_script)
+        self.assertIn("importlib.util.find_spec", calibration_script)
+        self.assertNotIn(
+            'python -m unittest discover -s tests -p "test_*.py"',
+            calibration_script,
+        )
 
     def test_modal_calibration_runner_uses_gpu_dockerfile_and_device_env(self):
         modal_runner = (
@@ -137,6 +145,9 @@ class DockerAndWorkflowTest(unittest.TestCase):
         self.assertIn("cuda", modal_runner)
         self.assertIn("bash scripts/ci/run_calibration.sh", modal_runner)
         self.assertIn("ci-logs/asr_calibration_report.json", modal_runner)
+        self.assertIn("Environment summary", modal_runner)
+        self.assertIn("Report exists", modal_runner)
+        self.assertNotIn('print("result: "', modal_runner)
 
 if __name__ == "__main__":
     unittest.main()
