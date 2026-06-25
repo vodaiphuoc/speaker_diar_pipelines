@@ -36,6 +36,7 @@ from SDP.onnx.preprocess.audio_preprocessing import (
     AudioToMelSpectrogramPreprocessorOnnxRunner,
 )
 from SDP.onnx.preprocess.feature_buffer import CacheFeatureBufferer, FeatureBufferChunk
+from SDP.pipeline import MergedSpeechSegment, StreamingDiarizationASRMerger
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class StreamingDiarizationEvent:
 class StreamingPipelineResult:
     diarization_events: tuple[StreamingDiarizationEvent, ...]
     asr_events: tuple[StreamingASREvent, ...]
+    merged_segments: tuple[MergedSpeechSegment, ...] = ()
 
 
 class StreamingDiarizerOnnxService(object):
@@ -275,9 +277,11 @@ class StreamingDiarizationASROnnxService:
         self,
         diarization_service: StreamingDiarizerOnnxService,
         asr_session: StreamingASRSession,
+        merger: StreamingDiarizationASRMerger | None = None,
     ) -> None:
         self.diarization_service = diarization_service
         self.asr_session = asr_session
+        self._merger = merger or StreamingDiarizationASRMerger()
         self._stream_id: str | None = None
         self._flushed: bool = False
 
@@ -340,21 +344,32 @@ class StreamingDiarizationASROnnxService:
             samples, stream_id=stream_id
         )
         asr_events = self.asr_session.process_samples(samples, stream_id=stream_id)
+        merged_segments = self._merger.consume(
+            diarization_events=diarization_events,
+            asr_events=asr_events,
+        )
         return StreamingPipelineResult(
             diarization_events=tuple(diarization_events),
             asr_events=tuple(asr_events),
+            merged_segments=merged_segments,
         )
 
     def flush(self, stream_id: str = "default") -> StreamingPipelineResult:
         self._validate_stream(stream_id)
         if self._flushed:
-            return StreamingPipelineResult((), ())
+            return StreamingPipelineResult((), (), ())
         self._flushed = True
+        diarization_events = tuple(self.diarization_service.flush(stream_id=stream_id))
+        asr_events = tuple(self.asr_session.flush(stream_id=stream_id))
+        ready_segments = self._merger.consume(
+            diarization_events=diarization_events,
+            asr_events=asr_events,
+        )
+        remaining_segments = self._merger.flush()
         return StreamingPipelineResult(
-            diarization_events=tuple(
-                self.diarization_service.flush(stream_id=stream_id)
-            ),
-            asr_events=tuple(self.asr_session.flush(stream_id=stream_id)),
+            diarization_events=diarization_events,
+            asr_events=asr_events,
+            merged_segments=ready_segments + remaining_segments,
         )
 
     def _validate_stream(self, stream_id: str) -> None:
