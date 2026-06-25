@@ -13,7 +13,7 @@ from SDP.onnx.streaming_service import (
     StreamingDiarizationASROnnxService,
     StreamingDiarizationEvent,
 )
-from SDP.pipeline import MergedSpeechSegment, merge_diarization_asr_events
+from SDP.pipeline import MergedSpeechSegment, merge_pipeline_events
 from SDP.pipeline.calibration_report import (
     build_pipeline_calibration_report,
     write_pipeline_calibration_report,
@@ -203,7 +203,9 @@ def _run_native_asr_events(audio_path: Path):
     return tuple(events)
 
 
-def _run_onnx_pipeline_segments(audio_path: Path) -> tuple[MergedSpeechSegment, ...]:
+def _run_onnx_pipeline_segments(
+    audio_path: Path, alignment_mode: str
+) -> tuple[MergedSpeechSegment, ...]:
     asr_asset_dir = Path(os.environ.get("ASR_ASSET_DIR", ".onnx_ckpt/asr"))
     diar_asset_dir = Path(os.environ.get("DIAR_ASSET_DIR", ".onnx_ckpt/diar"))
     service = StreamingDiarizationASROnnxService.from_manifests(
@@ -211,6 +213,7 @@ def _run_onnx_pipeline_segments(audio_path: Path) -> tuple[MergedSpeechSegment, 
         asr_manifest_path=asr_asset_dir / "asr_artifact.json",
         device=os.environ.get("ONNX_PIPELINE_DEVICE", "cpu"),
         target_language="vi-VN",
+        alignment_mode=alignment_mode,
     )
     pcm = wav_to_mono_pcm16_bytes(audio_path, target_sr=16000)
     bytes_per_chunk = 16000 // 10 * 2
@@ -220,6 +223,23 @@ def _run_onnx_pipeline_segments(audio_path: Path) -> tuple[MergedSpeechSegment, 
         segments.extend(result.merged_segments)
     segments.extend(service.flush(stream_id="onnx").merged_segments)
     return tuple(segments)
+
+
+def _resolve_pipeline_alignment_mode():
+    mode = os.environ.get("PIPELINE_ALIGNMENT_MODE", "diarization_timeline").strip()
+    if mode not in ("diarization_timeline", "asr_timeline"):
+        raise ValueError(
+            "PIPELINE_ALIGNMENT_MODE must be 'diarization_timeline' or 'asr_timeline'"
+        )
+    return mode
+
+
+def _merge_pipeline_events_for_calibration(diarization_events, asr_events):
+    return merge_pipeline_events(
+        diarization_events=diarization_events,
+        asr_events=asr_events,
+        alignment_mode=_resolve_pipeline_alignment_mode(),
+    )
 
 
 class NativeDiarizationSegmentParsingTest(unittest.TestCase):
@@ -241,6 +261,26 @@ class NativeDiarizationSegmentParsingTest(unittest.TestCase):
         )
 
 
+class PipelineAlignmentModeResolutionTest(unittest.TestCase):
+    def test_defaults_to_diarization_timeline(self):
+        with unittest.mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                _resolve_pipeline_alignment_mode(),
+                "diarization_timeline",
+            )
+
+    def test_accepts_asr_timeline(self):
+        with unittest.mock.patch.dict(
+            os.environ, {"PIPELINE_ALIGNMENT_MODE": "asr_timeline"}
+        ):
+            self.assertEqual(_resolve_pipeline_alignment_mode(), "asr_timeline")
+
+    def test_rejects_unknown_mode(self):
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_ALIGNMENT_MODE": "bad"}):
+            with self.assertRaisesRegex(ValueError, "PIPELINE_ALIGNMENT_MODE"):
+                _resolve_pipeline_alignment_mode()
+
+
 @unittest.skipUnless(
     os.environ.get("RUN_PIPELINE_CALIBRATION") == "1",
     "Set RUN_PIPELINE_CALIBRATION=1 to run pipeline-level NeMo/ONNX calibration",
@@ -255,13 +295,15 @@ class NativeVsOnnxPipelineCalibrationTest(unittest.TestCase):
         )
         native_diarization_events = _run_native_diarization_events(audio_path)
         native_asr_events = _run_native_asr_events(audio_path)
-        native_segments = merge_diarization_asr_events(
+        alignment_mode = _resolve_pipeline_alignment_mode()
+        native_segments = _merge_pipeline_events_for_calibration(
             native_diarization_events, native_asr_events
         )
-        onnx_segments = _run_onnx_pipeline_segments(audio_path)
+        onnx_segments = _run_onnx_pipeline_segments(audio_path, alignment_mode)
 
         report = build_pipeline_calibration_report(
             audio_file=str(audio_path),
+            alignment_mode=alignment_mode,
             native_segments=native_segments,
             onnx_segments=onnx_segments,
         )

@@ -8,6 +8,7 @@ class PipelineCalibrationReportTest(unittest.TestCase):
     def test_report_serializes_segments_and_word_diff(self):
         report = build_pipeline_calibration_report(
             audio_file="sample.wav",
+            alignment_mode="asr_timeline",
             native_segments=(
                 MergedSpeechSegment(
                     stream_id="native",
@@ -32,6 +33,7 @@ class PipelineCalibrationReportTest(unittest.TestCase):
         )
 
         self.assertEqual(report["audio_file"], "sample.wav")
+        self.assertEqual(report["alignment_mode"], "asr_timeline")
         self.assertTrue(report["exact_match"]["speaker_ids"])
         self.assertTrue(report["exact_match"]["timestamps_within_tolerance"])
         self.assertFalse(report["exact_match"]["text"])

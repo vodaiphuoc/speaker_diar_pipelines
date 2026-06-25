@@ -4,8 +4,17 @@ set -euo pipefail
 ASR_ASSET_DIR="${ASR_ASSET_DIR:-/app/.onnx_ckpt/asr}"
 DIAR_ASSET_DIR="${DIAR_ASSET_DIR:-/app/.onnx_ckpt/diar}"
 CALIBRATION_WAV="${PIPELINE_CALIBRATION_WAV:-/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav}"
-CALIBRATION_REPORT="${PIPELINE_CALIBRATION_REPORT:-/app/ci-logs/pipeline_calibration_report.json}"
+ALIGNMENT_MODE="${PIPELINE_ALIGNMENT_MODE:-diarization_timeline}"
+CALIBRATION_REPORT="${PIPELINE_CALIBRATION_REPORT:-/app/ci-logs/pipeline_calibration_report_${ALIGNMENT_MODE}.json}"
 CALIBRATION_TEST_TARGET="${PIPELINE_CALIBRATION_TEST_TARGET:-tests.calibration.pipeline.test_calibration.NativeVsOnnxPipelineCalibrationTest}"
+
+case "${ALIGNMENT_MODE}" in
+  diarization_timeline|asr_timeline) ;;
+  *)
+    echo "PIPELINE_ALIGNMENT_MODE must be 'diarization_timeline' or 'asr_timeline', got: ${ALIGNMENT_MODE}" >&2
+    exit 1
+    ;;
+esac
 
 echo "Exporting latest ASR ONNX artifacts into pipeline calibration volume path: ${ASR_ASSET_DIR}"
 rm -rf "${ASR_ASSET_DIR}"
@@ -56,6 +65,7 @@ echo "python=$(command -v python)"
 echo "CALIBRATION_TEST_TARGET=${CALIBRATION_TEST_TARGET}"
 echo "CALIBRATION_WAV=${CALIBRATION_WAV}"
 echo "CALIBRATION_REPORT=${CALIBRATION_REPORT}"
+echo "PIPELINE_ALIGNMENT_MODE=${ALIGNMENT_MODE}"
 echo "ASR_ASSET_DIR=${ASR_ASSET_DIR}"
 echo "DIAR_ASSET_DIR=${DIAR_ASSET_DIR}"
 python - <<'PY'
@@ -80,6 +90,7 @@ for module_name in (
 PY
 
 RUN_PIPELINE_CALIBRATION=1 \
+PIPELINE_ALIGNMENT_MODE="${ALIGNMENT_MODE}" \
 PIPELINE_CALIBRATION_WAV="${CALIBRATION_WAV}" \
 PIPELINE_CALIBRATION_REPORT="${CALIBRATION_REPORT}" \
 python -m unittest "${CALIBRATION_TEST_TARGET}" -v

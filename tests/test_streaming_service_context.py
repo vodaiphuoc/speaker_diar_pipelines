@@ -343,6 +343,51 @@ class CombinedStreamingServiceTest(unittest.TestCase):
             ),
         )
 
+    def test_process_returns_asr_timeline_segments_when_configured(self):
+        diar_event = StreamingDiarizationEvent(
+            stream_id="stream-1",
+            sequence_id=0,
+            speaker_id=2,
+            start=0.0,
+            end=1.0,
+        )
+        asr_event = StreamingASREvent(
+            stream_id="stream-1",
+            sequence_id=3,
+            token_ids=(8,),
+            text_delta="xin",
+            full_text="xin",
+            token_times=((0.2, 0.4),),
+            start=0.2,
+            end=0.4,
+            is_final=False,
+        )
+        service = StreamingDiarizationASROnnxService(
+            diarization_service=FakeStreamingBranch(diar_event),
+            asr_session=FakeStreamingBranch(asr_event),
+            alignment_mode="asr_timeline",
+        )
+
+        result = service.process(
+            np.array([1, 2], dtype=np.int16).tobytes(), stream_id="stream-1"
+        )
+
+        self.assertEqual(
+            result.merged_segments,
+            (
+                MergedSpeechSegment(
+                    stream_id="stream-1",
+                    sequence_id=3,
+                    speaker_id=2,
+                    start=0.2,
+                    end=0.4,
+                    text="xin",
+                    token_ids=(8,),
+                    token_times=((0.2, 0.4),),
+                ),
+            ),
+        )
+
     def test_flush_returns_remaining_merged_segments(self):
         diar_event = StreamingDiarizationEvent(
             stream_id="stream-1",

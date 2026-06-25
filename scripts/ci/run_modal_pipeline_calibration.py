@@ -10,11 +10,14 @@ import modal
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 CALIBRATION_LOG_PATH = Path("ci-logs/pipeline_calibration.log")
-CALIBRATION_REPORT_PATH = Path("ci-logs/pipeline_calibration_report.json")
 CALIBRATION_COMMAND_DISPLAY = "bash scripts/ci/run_pipeline_calibration.sh"
 PIPELINE_CALIBRATION_VOLUME_NAME = os.environ.get(
     "MODAL_PIPELINE_CALIBRATION_VOLUME",
     "speaker_diar_ci_pipeline_calibration",
+)
+PIPELINE_ALIGNMENT_MODE = os.environ.get(
+    "PIPELINE_ALIGNMENT_MODE",
+    "diarization_timeline",
 )
 
 dockerfile_image = modal.Image.from_dockerfile(
@@ -56,14 +59,16 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
     volume_root = Path("/app/.modal_ci/pipeline_calibration")
     logs_dir = volume_root / "ci-logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    report_path = logs_dir / "pipeline_calibration_report.json"
+    alignment_mode = PIPELINE_ALIGNMENT_MODE
+    report_path = logs_dir / f"pipeline_calibration_report_{alignment_mode}.json"
 
     env = os.environ.copy()
     env.update(
         {
-            "ASR_ASSET_DIR": str(volume_root / "onnx_ckpt" / "asr"),
+            "ASR_ASSET_DIR": str(volume_root / "onnx_ckpt" / "asr" / alignment_mode),
             "DIAR_ASSET_DIR": str(volume_root),
             "MODAL_PIPELINE_CALIBRATION_VOLUME": PIPELINE_CALIBRATION_VOLUME_NAME,
+            "PIPELINE_ALIGNMENT_MODE": alignment_mode,
             "RUN_PIPELINE_CALIBRATION": "1",
             "NEMOTRON_NATIVE_DEVICE": "cuda",
             "PIPELINE_CALIBRATION_WAV": (
@@ -76,6 +81,7 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
         "ASR_ASSET_DIR",
         "DIAR_ASSET_DIR",
         "MODAL_PIPELINE_CALIBRATION_VOLUME",
+        "PIPELINE_ALIGNMENT_MODE",
         "RUN_PIPELINE_CALIBRATION",
         "NEMOTRON_NATIVE_DEVICE",
         "PIPELINE_CALIBRATION_WAV",
@@ -142,7 +148,10 @@ def main() -> None:
     CALIBRATION_LOG_PATH.write_text(log_text, encoding="utf-8")
 
     if result["report"]:
-        CALIBRATION_REPORT_PATH.write_text(result["report"], encoding="utf-8")
+        report_path = Path(
+            f"ci-logs/pipeline_calibration_report_{PIPELINE_ALIGNMENT_MODE}.json"
+        )
+        report_path.write_text(result["report"], encoding="utf-8")
 
     if result["returncode"] != 0:
         raise SystemExit(return_code)

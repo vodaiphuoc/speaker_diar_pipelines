@@ -36,7 +36,11 @@ from SDP.onnx.preprocess.audio_preprocessing import (
     AudioToMelSpectrogramPreprocessorOnnxRunner,
 )
 from SDP.onnx.preprocess.feature_buffer import CacheFeatureBufferer, FeatureBufferChunk
-from SDP.pipeline import MergedSpeechSegment, StreamingDiarizationASRMerger
+from SDP.pipeline import (
+    AlignmentMode,
+    MergedSpeechSegment,
+    StreamingPipelineEventMerger,
+)
 
 
 @dataclass(frozen=True)
@@ -277,11 +281,14 @@ class StreamingDiarizationASROnnxService:
         self,
         diarization_service: StreamingDiarizerOnnxService,
         asr_session: StreamingASRSession,
-        merger: StreamingDiarizationASRMerger | None = None,
+        alignment_mode: AlignmentMode = "diarization_timeline",
+        merger: StreamingPipelineEventMerger | None = None,
     ) -> None:
         self.diarization_service = diarization_service
         self.asr_session = asr_session
-        self._merger = merger or StreamingDiarizationASRMerger()
+        self._merger = merger or StreamingPipelineEventMerger(
+            alignment_mode=alignment_mode
+        )
         self._stream_id: str | None = None
         self._flushed: bool = False
 
@@ -299,6 +306,7 @@ class StreamingDiarizationASROnnxService:
         right_offset: int = 8,
         enable_async_queue: bool = False,
         async_queue_maxsize: int = 0,
+        alignment_mode: AlignmentMode = "diarization_timeline",
     ) -> "StreamingDiarizationASROnnxService":
         diarization_artifact = load_diarization_artifact_manifest(
             diarization_manifest_path
@@ -329,6 +337,7 @@ class StreamingDiarizationASROnnxService:
         return cls(
             diarization_service=diarization_service,
             asr_session=asr_session,
+            alignment_mode=alignment_mode,
         )
 
     def process(

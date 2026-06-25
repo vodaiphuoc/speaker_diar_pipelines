@@ -5,7 +5,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Sequence
 
-from .alignment import MergedSpeechSegment
+from .alignment import AlignmentMode, MergedSpeechSegment
 
 
 def build_pipeline_calibration_report(
@@ -13,12 +13,14 @@ def build_pipeline_calibration_report(
     audio_file: str,
     native_segments: Sequence[MergedSpeechSegment],
     onnx_segments: Sequence[MergedSpeechSegment],
+    alignment_mode: AlignmentMode = "diarization_timeline",
     timestamp_tolerance: float = 0.1,
 ) -> dict:
     native_full_text = _join_segment_text(native_segments)
     onnx_full_text = _join_segment_text(onnx_segments)
     return {
         "audio_file": audio_file,
+        "alignment_mode": alignment_mode,
         "timestamp_tolerance": float(timestamp_tolerance),
         "exact_match": {
             "segment_count": len(native_segments) == len(onnx_segments),
