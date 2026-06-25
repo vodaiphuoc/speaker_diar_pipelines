@@ -10,3 +10,4 @@ model.json
 *.onnx
 **/*.data
 .ci_artifacts/
+ci-logs/
