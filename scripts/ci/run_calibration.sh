@@ -4,6 +4,7 @@ set -euo pipefail
 ASR_ASSET_DIR="${ASR_ASSET_DIR:-/app/.onnx_ckpt/asr}"
 CALIBRATION_WAV="${NEMOTRON_CALIBRATION_WAV:-/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav}"
 CALIBRATION_REPORT="${NEMOTRON_CALIBRATION_REPORT:-/app/ci-logs/asr_calibration_report.json}"
+CALIBRATION_TEST_TARGET="${NEMOTRON_CALIBRATION_TEST_TARGET:-tests.test_asr_calibration.NemotronONNXCalibrationTest}"
 
 mkdir -p "${ASR_ASSET_DIR}"
 
@@ -30,7 +31,34 @@ ruff check \
   run_phase_three.py
 python -m compileall -q SDP exports tests run_phase_three.py
 
+echo "=== Calibration unittest environment ==="
+echo "cwd=$(pwd)"
+echo "python=$(command -v python)"
+echo "CALIBRATION_TEST_TARGET=${CALIBRATION_TEST_TARGET}"
+echo "CALIBRATION_WAV=${CALIBRATION_WAV}"
+echo "CALIBRATION_REPORT=${CALIBRATION_REPORT}"
+echo "ASR_ASSET_DIR=${ASR_ASSET_DIR}"
+python - <<'PY'
+import importlib.util
+import sys
+
+print(f"sys.executable={sys.executable}")
+print(f"sys.path[:5]={sys.path[:5]}")
+for module_name in (
+    "SDP",
+    "tests.test_asr_calibration",
+    "nemo",
+    "onnxruntime",
+):
+    try:
+        spec = importlib.util.find_spec(module_name)
+    except Exception as exc:
+        print(f"{module_name}=ERROR {type(exc).__name__}: {exc}")
+    else:
+        print(f"{module_name}={spec.origin if spec is not None else 'NOT_FOUND'}")
+PY
+
 RUN_NEMOTRON_CALIBRATION=1 \
 NEMOTRON_CALIBRATION_WAV="${CALIBRATION_WAV}" \
 NEMOTRON_CALIBRATION_REPORT="${CALIBRATION_REPORT}" \
-python -m unittest discover -s tests -p "test_*.py" -v
+python -m unittest "${CALIBRATION_TEST_TARGET}" -v

@@ -9,6 +9,8 @@ However, the API is quite low-level so we need to manipulate audio frames direct
 import gc
 import io
 import itertools
+import wave
+from pathlib import Path
 
 from typing import BinaryIO, Union
 
@@ -74,6 +76,72 @@ def decode_audio(
         return left_channel, right_channel
 
     return audio
+
+
+def resample_audio_like_nemo(
+    samples: np.ndarray,
+    orig_sr: int,
+    target_sr: int = 16000,
+) -> np.ndarray:
+    """Resample audio with the same librosa.core.resample call shape NeMo uses."""
+    orig_sr = int(orig_sr)
+    target_sr = int(target_sr)
+    if orig_sr <= 0 or target_sr <= 0:
+        raise ValueError(f"Invalid sample rates: orig_sr={orig_sr}, target_sr={target_sr}")
+
+    samples = np.asarray(samples, dtype=np.float32)
+    if orig_sr == target_sr or samples.size == 0:
+        return samples.astype(np.float32, copy=False)
+
+    import librosa
+
+    resampled = librosa.core.resample(
+        samples,
+        orig_sr=orig_sr,
+        target_sr=target_sr,
+    )
+    return resampled.astype(np.float32, copy=False)
+
+
+def wav_to_mono_float32(input_file: str | Path) -> tuple[np.ndarray, int]:
+    """Read a PCM WAV file as mono float32 audio and return audio plus sample rate."""
+    with wave.open(str(input_file), "rb") as wav_file:
+        sample_rate = wav_file.getframerate()
+        num_channels = wav_file.getnchannels()
+        sample_width = wav_file.getsampwidth()
+        raw_data = wav_file.readframes(wav_file.getnframes())
+
+    if sample_width == 2:
+        dtype = np.int16
+        scale = 32768.0
+    elif sample_width == 4:
+        dtype = np.int32
+        scale = 2147483648.0
+    else:
+        raise ValueError(f"Unsupported sample width: {sample_width} bytes")
+
+    audio = np.frombuffer(raw_data, dtype=dtype).astype(np.float32) / scale
+    if num_channels > 1:
+        audio = audio.reshape(-1, num_channels).mean(axis=1)
+
+    return audio.astype(np.float32, copy=False), sample_rate
+
+
+def float32_to_pcm16_bytes(samples: np.ndarray) -> bytes:
+    """Convert float32 audio in [-1, 1] to signed 16-bit PCM bytes."""
+    clipped = np.clip(np.asarray(samples, dtype=np.float32), -1.0, 1.0)
+    pcm = np.where(clipped < 0, clipped * 32768.0, clipped * 32767.0)
+    return pcm.astype(np.int16).tobytes()
+
+
+def wav_to_mono_pcm16_bytes(
+    input_file: str | Path,
+    target_sr: int = 16000,
+) -> bytes:
+    """Read a WAV file, resample like NeMo when needed, and return mono PCM16 bytes."""
+    audio, sample_rate = wav_to_mono_float32(input_file)
+    audio = resample_audio_like_nemo(audio, orig_sr=sample_rate, target_sr=target_sr)
+    return float32_to_pcm16_bytes(audio)
 
 
 def _ignore_invalid_frames(frames):

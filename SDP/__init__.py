@@ -21,7 +21,7 @@ from .onnx.streaming_service import (
     StreamingDiarizerOnnxService,
     StreamingPipelineResult,
 )
-from .utils import decode_audio
+from .utils import decode_audio, wav_to_mono_pcm16_bytes
 
 __all__ = [
     "StreamingDiarizerOnnxService",
@@ -36,4 +36,5 @@ __all__ = [
     "load_preprocessor_config",
     "load_sortformer_modules_config",
     "decode_audio",
+    "wav_to_mono_pcm16_bytes",
 ]

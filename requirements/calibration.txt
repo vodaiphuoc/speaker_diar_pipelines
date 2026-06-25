@@ -1,7 +1,6 @@
 -r test.txt
 
 Cython
-librosa>=0.11,<1
 numba>=0.61,<1
 onnxscript
 packaging
