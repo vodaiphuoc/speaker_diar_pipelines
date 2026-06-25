@@ -6,7 +6,7 @@ on:
       - main
   push:
     branches:
-      - ci-asr-calib
+      - main
   schedule:
     - cron: "0 18 * * *"
   workflow_dispatch:
@@ -49,7 +49,7 @@ jobs:
       - name: Run ONNX tests
         run: docker run --rm speaker-diar-onnx-tests:${{ github.sha }}
 
-  nemotron-calibration:
+  nemotron-asr-calibration:
     name: Native NeMo versus ONNX calibration on Modal
     runs-on: ubuntu-latest
     environment: TEST-CI-GPU
@@ -57,6 +57,7 @@ jobs:
     env:
       MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      MODAL_ASR_CALIBRATION_VOLUME: speaker_diar_ci_asr_calibration
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -68,6 +69,24 @@ jobs:
 
       - name: Install Modal client
         run: python -m pip install --upgrade pip modal
+
+      - name: Ensure ASR calibration Modal volume exists
+        run: |
+          set -euo pipefail
+          if [[ -z "${MODAL_TOKEN_ID}" || -z "${MODAL_TOKEN_SECRET}" ]]; then
+            echo "Skipping Modal volume creation because Modal secrets are not configured."
+            exit 0
+          fi
+          if ! output="$(modal volume create "${MODAL_ASR_CALIBRATION_VOLUME}" 2>&1)"; then
+            echo "${output}"
+            if grep -qi "exist" <<<"${output}"; then
+              echo "Volume ${MODAL_ASR_CALIBRATION_VOLUME} already exists; continuing."
+            else
+              exit 1
+            fi
+          else
+            echo "${output}"
+          fi
 
       - name: Run Modal GPU calibration
         run: |
