@@ -9,9 +9,6 @@ from typing import TypedDict
 import modal
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-print(f"{__file__}| ROOT_DIR: ", ROOT_DIR)
-print(f"{__file__}| ROOT_DIR: ", Path(__file__).resolve().parent)
-print(f"{__file__}| ROOT_DIR: ", Path(__file__).resolve().parent.parent)
 CALIBRATION_LOG_PATH = Path("ci-logs/calibration.log")
 CALIBRATION_REPORT_PATH = Path("ci-logs/asr_calibration_report.json")
 CALIBRATION_COMMAND_DISPLAY = "bash scripts/ci/run_calibration.sh"
@@ -27,8 +24,13 @@ app = modal.App("speaker-diar-asr-calibration")
 
 class CalibrationResult(TypedDict):
     returncode: int
+    command: str
+    cwd: str
+    env_summary: dict[str, str]
     stdout: str
     stderr: str
+    report_path: str
+    report_exists: bool
     report: str
 
 
@@ -58,23 +60,38 @@ def run_calibration_remote() -> CalibrationResult:
             "NEMOTRON_CALIBRATION_REPORT": str(report_path),
         }
     )
+    env_summary_keys = (
+        "ASR_ASSET_DIR",
+        "RUN_NEMOTRON_CALIBRATION",
+        "NEMOTRON_NATIVE_DEVICE",
+        "NEMOTRON_CALIBRATION_WAV",
+        "NEMOTRON_CALIBRATION_REPORT",
+        "NEMOTRON_CALIBRATION_TEST_TARGET",
+        "PYTHONPATH",
+    )
+    env_summary = {key: env.get(key, "<unset>") for key in env_summary_keys}
 
     completed = subprocess.run(
         ["bash", "scripts/ci/run_calibration.sh"],
         cwd="/app",
         env=env,
         text=True,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         check=False,
     )
+    report_exists = report_path.exists()
 
     return {
         "returncode": completed.returncode,
+        "command": CALIBRATION_COMMAND_DISPLAY,
+        "cwd": "/app",
+        "env_summary": env_summary,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
-        "report": report_path.read_text(encoding="utf-8")
-        if report_path.exists()
-        else "",
+        "report_path": str(report_path),
+        "report_exists": report_exists,
+        "report": report_path.read_text(encoding="utf-8") if report_exists else "",
     }
 
 
@@ -82,13 +99,29 @@ def run_calibration_remote() -> CalibrationResult:
 def main() -> None:
     CALIBRATION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     result = run_calibration_remote.remote()
-    print("result: ", result)
     return_code = result["returncode"]
-    stdout = result["stdout"]
-    stderr = result["stderr"]
+    stdout = result["stdout"] or "<empty>"
+    stderr = result["stderr"] or "<empty>"
+    combined_output = f"{stdout}\n{stderr}"
+    failure_hint = ""
+    if return_code != 0 and (
+        "ModuleNotFoundError" in combined_output or "ImportError" in combined_output
+    ):
+        failure_hint = (
+            "\nFailure hint: import/module error detected. Check the module "
+            "availability lines in the unittest environment section above.\n"
+        )
+    env_summary = "\n".join(
+        f"{key}={value}" for key, value in sorted(result["env_summary"].items())
+    )
     log_text = (
-        f"Remote command: {CALIBRATION_COMMAND_DISPLAY}\n"
+        f"Remote command: {result['command']}\n"
+        f"Remote cwd: {result['cwd']}\n"
         f"Return code: {return_code}\n\n"
+        f"Environment summary:\n{env_summary}\n\n"
+        f"Report path: {result['report_path']}\n"
+        f"Report exists: {result['report_exists']}\n"
+        f"{failure_hint}\n"
         f"STDOUT:\n{stdout}\n"
         f"STDERR:\n{stderr}\n"
     )
