@@ -11,6 +11,7 @@ from SDP import wav_to_mono_pcm16_bytes
 from SDP.onnx.asr import create_nemotron_streaming_session_from_manifest
 from SDP.onnx.asr.utils.calibration_report import (
     build_asr_calibration_report,
+    token_frames_to_token_times,
     write_asr_calibration_report,
 )
 
@@ -200,13 +201,14 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
         native_transcriptions = _extract_native_transcription_texts(transcribed_texts)
         native_text = native_transcriptions[0] if native_transcriptions else ""
         native_tokens = ()
-        native_token_timestamps = None
+        native_token_times = None
         if previous_hypotheses:
             native_hypothesis = previous_hypotheses[0]
             native_tokens = tuple(int(token) for token in native_hypothesis.y_sequence)
-            native_token_timestamps = _int_sequence_or_none(
+            native_token_frames = _int_sequence_or_none(
                 getattr(native_hypothesis, "timestamp", None)
             )
+            native_token_times = token_frames_to_token_times(native_token_frames)
 
         del previous_hypotheses
         del caches
@@ -234,7 +236,7 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
             audio_file=str(audio_path),
             native_text=native_text,
             native_token_ids=native_tokens,
-            native_token_timestamps=native_token_timestamps,
+            native_token_times=native_token_times,
             onnx_text=onnx_session.full_text,
             onnx_token_ids=onnx_session.token_ids,
             onnx_token_times=onnx_token_times,
