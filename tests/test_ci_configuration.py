@@ -119,7 +119,7 @@ class DockerAndWorkflowTest(unittest.TestCase):
             calibration_script,
         )
         self.assertIn(
-            'CALIBRATION_TEST_TARGET="${NEMOTRON_CALIBRATION_TEST_TARGET:-tests.test_asr_calibration.NemotronONNXCalibrationTest}"',
+            'CALIBRATION_TEST_TARGET="${NEMOTRON_CALIBRATION_TEST_TARGET:-tests.calibration.asr.test_model_calibration.NemotronONNXCalibrationTest}"',
             calibration_script,
         )
         self.assertIn(

@@ -15,6 +15,8 @@ from SDP.onnx.streaming_service import (
     StreamingDiarizerOnnxService,
     StreamingPipelineResult,
 )
+from SDP.onnx.asr import StreamingASREvent
+from SDP.pipeline import MergedSpeechSegment
 
 
 class FakeFeatureBufferer:
@@ -220,18 +222,18 @@ class StreamingServiceContextTest(unittest.TestCase):
 
 
 class FakeStreamingBranch:
-    def __init__(self, event):
-        self.event = event
+    def __init__(self, *events):
+        self.events = list(events)
         self.sample_calls = []
         self.flush_calls = []
 
     def process_samples(self, samples, stream_id):
         self.sample_calls.append((samples.copy(), stream_id))
-        return [self.event]
+        return list(self.events)
 
     def flush(self, stream_id):
         self.flush_calls.append(stream_id)
-        return [self.event]
+        return list(self.events)
 
 
 class CombinedStreamingServiceTest(unittest.TestCase):
@@ -296,6 +298,80 @@ class CombinedStreamingServiceTest(unittest.TestCase):
 
         self.assertEqual(result.diarization_events, (diar_event,))
         self.assertEqual(result.asr_events, (asr_event,))
+
+    def test_process_returns_merged_segments_when_asr_covers_diarization(self):
+        diar_event = StreamingDiarizationEvent(
+            stream_id="stream-1",
+            sequence_id=0,
+            speaker_id=1,
+            start=0.0,
+            end=1.0,
+        )
+        asr_event = StreamingASREvent(
+            stream_id="stream-1",
+            sequence_id=0,
+            token_ids=(7,),
+            text_delta="xin chào",
+            full_text="xin chào",
+            token_times=((0.1, 1.1),),
+            start=0.1,
+            end=1.1,
+            is_final=False,
+        )
+        service = StreamingDiarizationASROnnxService(
+            diarization_service=FakeStreamingBranch(diar_event),
+            asr_session=FakeStreamingBranch(asr_event),
+        )
+
+        result = service.process(
+            np.array([1, 2], dtype=np.int16).tobytes(), stream_id="stream-1"
+        )
+
+        self.assertEqual(
+            result.merged_segments,
+            (
+                MergedSpeechSegment(
+                    stream_id="stream-1",
+                    sequence_id=0,
+                    speaker_id=1,
+                    start=0.0,
+                    end=1.0,
+                    text="xin chào",
+                    token_ids=(7,),
+                    token_times=((0.1, 1.1),),
+                ),
+            ),
+        )
+
+    def test_flush_returns_remaining_merged_segments(self):
+        diar_event = StreamingDiarizationEvent(
+            stream_id="stream-1",
+            sequence_id=0,
+            speaker_id=1,
+            start=0.0,
+            end=1.0,
+        )
+        service = StreamingDiarizationASROnnxService(
+            diarization_service=FakeStreamingBranch(diar_event),
+            asr_session=FakeStreamingBranch(),
+        )
+        service.process(np.array([1], dtype=np.int16).tobytes(), stream_id="stream-1")
+
+        result = service.flush(stream_id="stream-1")
+
+        self.assertEqual(
+            result.merged_segments,
+            (
+                MergedSpeechSegment(
+                    stream_id="stream-1",
+                    sequence_id=0,
+                    speaker_id=1,
+                    start=0.0,
+                    end=1.0,
+                    text="",
+                ),
+            ),
+        )
 
 
 if __name__ == "__main__":
