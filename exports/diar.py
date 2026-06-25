@@ -106,11 +106,12 @@ def run():
         import torch
         from nemo.collections.asr.models import SortformerEncLabelModel
         from nemo.collections.asr.modules import AudioToMelSpectrogramPreprocessor
+
         from SDP.onnx.artifacts import write_diarization_artifact_manifest
 
-        CHUNK_SIZE = 124
-        RIGHT_CONTEXT = 1
-        FIFO_SIZE = 124
+        CHUNK_SIZE = 6
+        RIGHT_CONTEXT = 7
+        FIFO_SIZE = 188
         UPDATE_PERIOD = 124
         SPEAKER_CACHE_SIZE = 188
 
