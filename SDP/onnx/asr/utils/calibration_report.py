@@ -44,12 +44,36 @@ def compare_words(
     }
 
 
+def token_frames_to_token_times(
+    token_frames: Sequence[int] | None,
+    *,
+    frame_duration: float = 0.08,
+) -> list[list[float]] | None:
+    if token_frames is None:
+        return None
+    return [
+        [
+            round(int(frame) * frame_duration, 2),
+            round((int(frame) + 1) * frame_duration, 2),
+        ]
+        for frame in token_frames
+    ]
+
+
+def _serialize_token_times(
+    token_times: Sequence[Sequence[float]] | None,
+) -> list[list[float]] | None:
+    if token_times is None:
+        return None
+    return [[float(start), float(end)] for start, end in token_times]
+
+
 def build_asr_calibration_report(
     *,
     audio_file: str,
     native_text: str,
     native_token_ids: Sequence[int],
-    native_token_timestamps: Sequence[int] | None,
+    native_token_times: Sequence[Sequence[float]] | None,
     onnx_text: str,
     onnx_token_ids: Sequence[int],
     onnx_token_times: Sequence[Sequence[float]],
@@ -61,18 +85,12 @@ def build_asr_calibration_report(
         "native_nemo": {
             "full_text": native_text,
             "token_ids": native_token_id_list,
-            "token_timestamps": (
-                None
-                if native_token_timestamps is None
-                else [int(timestamp) for timestamp in native_token_timestamps]
-            ),
+            "token_times": _serialize_token_times(native_token_times),
         },
         "onnx_streaming": {
             "full_text": onnx_text,
             "token_ids": onnx_token_id_list,
-            "token_times": [
-                [float(start), float(end)] for start, end in onnx_token_times
-            ],
+            "token_times": _serialize_token_times(onnx_token_times),
         },
         "word_diff": compare_words(native_text, onnx_text),
         "exact_match": {

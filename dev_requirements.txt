@@ -1,4 +1,0 @@
--r calibration_requirements.txt
-
-faster-whisper
-modal
