@@ -6,7 +6,7 @@ on:
       - main
   push:
     branches:
-      - merge-results
+      - main
   schedule:
     - cron: "0 18 * * *"
   workflow_dispatch:

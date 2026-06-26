@@ -43,6 +43,9 @@ class PipelineCalibrationResult(TypedDict):
     report_path: str
     report_exists: bool
     report: str
+    raw_events_report_path: str
+    raw_events_report_exists: bool
+    raw_events_report: str
 
 
 @app.function(
@@ -61,6 +64,7 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
     logs_dir.mkdir(parents=True, exist_ok=True)
     alignment_mode = PIPELINE_ALIGNMENT_MODE
     report_path = logs_dir / f"pipeline_calibration_report_{alignment_mode}.json"
+    raw_events_report_path = logs_dir / f"pipeline_raw_events_{alignment_mode}.json"
 
     env = os.environ.copy()
     env.update(
@@ -75,6 +79,7 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
                 "/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav"
             ),
             "PIPELINE_CALIBRATION_REPORT": str(report_path),
+            "PIPELINE_RAW_EVENTS_REPORT": str(raw_events_report_path),
         }
     )
     env_summary_keys = (
@@ -86,6 +91,7 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
         "NEMOTRON_NATIVE_DEVICE",
         "PIPELINE_CALIBRATION_WAV",
         "PIPELINE_CALIBRATION_REPORT",
+        "PIPELINE_RAW_EVENTS_REPORT",
         "PIPELINE_CALIBRATION_TEST_TARGET",
         "PYTHONPATH",
     )
@@ -101,6 +107,7 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
         check=False,
     )
     report_exists = report_path.exists()
+    raw_events_report_exists = raw_events_report_path.exists()
 
     return {
         "returncode": completed.returncode,
@@ -112,6 +119,13 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
         "report_path": str(report_path),
         "report_exists": report_exists,
         "report": report_path.read_text(encoding="utf-8") if report_exists else "",
+        "raw_events_report_path": str(raw_events_report_path),
+        "raw_events_report_exists": raw_events_report_exists,
+        "raw_events_report": (
+            raw_events_report_path.read_text(encoding="utf-8")
+            if raw_events_report_exists
+            else ""
+        ),
     }
 
 
@@ -141,6 +155,8 @@ def main() -> None:
         f"Environment summary:\n{env_summary}\n\n"
         f"Report path: {result['report_path']}\n"
         f"Report exists: {result['report_exists']}\n"
+        f"Raw events report path: {result['raw_events_report_path']}\n"
+        f"Raw events report exists: {result['raw_events_report_exists']}\n"
         f"{failure_hint}\n"
         f"STDOUT:\n{stdout}\n"
         f"STDERR:\n{stderr}\n"
@@ -152,6 +168,14 @@ def main() -> None:
             f"ci-logs/pipeline_calibration_report_{PIPELINE_ALIGNMENT_MODE}.json"
         )
         report_path.write_text(result["report"], encoding="utf-8")
+    if result["raw_events_report"]:
+        raw_events_report_path = Path(
+            f"ci-logs/pipeline_raw_events_{PIPELINE_ALIGNMENT_MODE}.json"
+        )
+        raw_events_report_path.write_text(
+            result["raw_events_report"],
+            encoding="utf-8",
+        )
 
     if result["returncode"] != 0:
         raise SystemExit(return_code)

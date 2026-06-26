@@ -12,10 +12,12 @@ from SDP.onnx.asr.utils.calibration_report import token_frames_to_token_times
 from SDP.onnx.streaming_service import (
     StreamingDiarizationASROnnxService,
     StreamingDiarizationEvent,
+    StreamingPipelineResult,
 )
 from SDP.pipeline import MergedSpeechSegment, merge_pipeline_events
 from SDP.pipeline.calibration_report import (
     build_pipeline_calibration_report,
+    build_pipeline_raw_events_report,
     write_pipeline_calibration_report,
 )
 from tests.calibration.support import (
@@ -204,9 +206,13 @@ def _run_native_asr_events(audio_path: Path):
     return tuple(events)
 
 
-def _run_onnx_pipeline_segments(
+def _run_onnx_pipeline_events(
     audio_path: Path, alignment_mode: str
-) -> tuple[MergedSpeechSegment, ...]:
+) -> tuple[
+    tuple[StreamingDiarizationEvent, ...],
+    tuple[StreamingASREvent, ...],
+    tuple[MergedSpeechSegment, ...],
+]:
     asr_asset_dir = Path(os.environ.get("ASR_ASSET_DIR", ".onnx_ckpt/asr"))
     diar_asset_dir = Path(os.environ.get("DIAR_ASSET_DIR", ".onnx_ckpt/diar"))
     service = StreamingDiarizationASROnnxService.from_manifests(
@@ -218,14 +224,32 @@ def _run_onnx_pipeline_segments(
     )
     pcm = wav_to_mono_pcm16_bytes(audio_path, target_sr=16000)
     bytes_per_chunk = 16000 // 10 * 2
-    segments = []
+    diarization_events = []
+    asr_events = []
     for offset in range(0, len(pcm), bytes_per_chunk):
         result = service.process(
             pcm[offset : offset + bytes_per_chunk], stream_id="onnx"
         )
-        segments.extend(result.merged_segments)
-    segments.extend(service.flush(stream_id="onnx").merged_segments)
-    return tuple(segments)
+        diarization_events.extend(result.diarization_events)
+        asr_events.extend(result.asr_events)
+    result = service.flush(stream_id="onnx")
+    diarization_events.extend(result.diarization_events)
+    asr_events.extend(result.asr_events)
+    return (
+        tuple(diarization_events),
+        tuple(asr_events),
+        merge_pipeline_events(
+            diarization_events=diarization_events,
+            asr_events=asr_events,
+            alignment_mode=alignment_mode,
+        ),
+    )
+
+
+def _raw_events_report_path(calibration_report_path: str | Path) -> Path:
+    report_path = Path(calibration_report_path)
+    alignment_mode = _resolve_pipeline_alignment_mode()
+    return report_path.with_name(f"pipeline_raw_events_{alignment_mode}.json")
 
 
 def _resolve_pipeline_alignment_mode():
@@ -286,6 +310,65 @@ class PipelineAlignmentModeResolutionTest(unittest.TestCase):
                 _resolve_pipeline_alignment_mode()
 
 
+class OnnxPipelineEventCollectionTest(unittest.TestCase):
+    def test_collects_raw_onnx_events_before_merge(self):
+        diarization_event = StreamingDiarizationEvent(
+            stream_id="onnx",
+            sequence_id=0,
+            speaker_id=2,
+            start=0.0,
+            end=1.0,
+        )
+        asr_event = StreamingASREvent(
+            stream_id="onnx",
+            sequence_id=0,
+            token_ids=(101,),
+            text_delta="xin",
+            full_text="xin",
+            token_times=((0.1, 0.2),),
+            start=0.1,
+            end=0.2,
+            is_final=False,
+        )
+
+        class FakePipelineService:
+            def process(self, audio, stream_id="default"):
+                return StreamingPipelineResult(
+                    diarization_events=(diarization_event,),
+                    asr_events=(),
+                    merged_segments=(),
+                )
+
+            def flush(self, stream_id="default"):
+                return StreamingPipelineResult(
+                    diarization_events=(),
+                    asr_events=(asr_event,),
+                    merged_segments=(),
+                )
+
+        with (
+            unittest.mock.patch(
+                f"{__name__}.wav_to_mono_pcm16_bytes",
+                return_value=b"\x00\x00",
+            ),
+            unittest.mock.patch.object(
+                StreamingDiarizationASROnnxService,
+                "from_manifests",
+                return_value=FakePipelineService(),
+            ),
+        ):
+            diarization_events, asr_events, segments = _run_onnx_pipeline_events(
+                Path("sample.wav"),
+                "asr_timeline",
+            )
+
+        self.assertEqual(diarization_events, (diarization_event,))
+        self.assertEqual(asr_events, (asr_event,))
+        self.assertEqual(len(segments), 1)
+        self.assertEqual(segments[0].speaker_id, 2)
+        self.assertEqual(segments[0].text, "xin")
+
+
 @unittest.skipUnless(
     os.environ.get("RUN_PIPELINE_CALIBRATION") == "1",
     "Set RUN_PIPELINE_CALIBRATION=1 to run pipeline-level NeMo/ONNX calibration",
@@ -304,20 +387,40 @@ class NativeVsOnnxPipelineCalibrationTest(unittest.TestCase):
         native_segments = _merge_pipeline_events_for_calibration(
             native_diarization_events, native_asr_events
         )
-        onnx_segments = _run_onnx_pipeline_segments(audio_path, alignment_mode)
+        (
+            onnx_diarization_events,
+            onnx_asr_events,
+            onnx_segments,
+        ) = _run_onnx_pipeline_events(audio_path, alignment_mode)
 
         report = build_pipeline_calibration_report(
             audio_file=str(audio_path),
             alignment_mode=alignment_mode,
             native_segments=native_segments,
             onnx_segments=onnx_segments,
+            native_diarization_events=native_diarization_events,
+            native_asr_events=native_asr_events,
+            onnx_diarization_events=onnx_diarization_events,
+            onnx_asr_events=onnx_asr_events,
         )
+        calibration_report_path = os.environ.get(
+            "PIPELINE_CALIBRATION_REPORT",
+            "ci-logs/pipeline_calibration_report.json",
+        )
+        write_pipeline_calibration_report(calibration_report_path, report)
         write_pipeline_calibration_report(
             os.environ.get(
-                "PIPELINE_CALIBRATION_REPORT",
-                "ci-logs/pipeline_calibration_report.json",
+                "PIPELINE_RAW_EVENTS_REPORT",
+                str(_raw_events_report_path(calibration_report_path)),
             ),
-            report,
+            build_pipeline_raw_events_report(
+                audio_file=str(audio_path),
+                alignment_mode=alignment_mode,
+                native_diarization_events=native_diarization_events,
+                native_asr_events=native_asr_events,
+                onnx_diarization_events=onnx_diarization_events,
+                onnx_asr_events=onnx_asr_events,
+            ),
         )
 
         self.assertGreater(

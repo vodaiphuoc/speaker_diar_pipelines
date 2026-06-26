@@ -13,6 +13,10 @@ def build_pipeline_calibration_report(
     audio_file: str,
     native_segments: Sequence[MergedSpeechSegment],
     onnx_segments: Sequence[MergedSpeechSegment],
+    native_diarization_events: Sequence[object] = (),
+    native_asr_events: Sequence[object] = (),
+    onnx_diarization_events: Sequence[object] = (),
+    onnx_asr_events: Sequence[object] = (),
     alignment_mode: AlignmentMode = "diarization_timeline",
     timestamp_tolerance: float = 0.1,
 ) -> dict:
@@ -38,9 +42,36 @@ def build_pipeline_calibration_report(
             "full_text": onnx_full_text,
             "segments": _serialize_segments(onnx_segments),
         },
+        "raw_events": _build_raw_events_section(
+            native_diarization_events=native_diarization_events,
+            native_asr_events=native_asr_events,
+            onnx_diarization_events=onnx_diarization_events,
+            onnx_asr_events=onnx_asr_events,
+        ),
         "word_diff": _word_diff(native_full_text, onnx_full_text),
         "segment_diff": _segment_diff(
             native_segments, onnx_segments, timestamp_tolerance
+        ),
+    }
+
+
+def build_pipeline_raw_events_report(
+    *,
+    audio_file: str,
+    alignment_mode: AlignmentMode,
+    native_diarization_events: Sequence[object],
+    native_asr_events: Sequence[object],
+    onnx_diarization_events: Sequence[object],
+    onnx_asr_events: Sequence[object],
+) -> dict:
+    return {
+        "audio_file": audio_file,
+        "alignment_mode": alignment_mode,
+        "raw_events": _build_raw_events_section(
+            native_diarization_events=native_diarization_events,
+            native_asr_events=native_asr_events,
+            onnx_diarization_events=onnx_diarization_events,
+            onnx_asr_events=onnx_asr_events,
         ),
     }
 
@@ -70,6 +101,92 @@ def _serialize_segments(segments: Sequence[MergedSpeechSegment]) -> list[dict]:
         }
         for segment in segments
     ]
+
+
+def _build_raw_events_section(
+    *,
+    native_diarization_events: Sequence[object],
+    native_asr_events: Sequence[object],
+    onnx_diarization_events: Sequence[object],
+    onnx_asr_events: Sequence[object],
+) -> dict:
+    return {
+        "native": _build_pipeline_raw_events(
+            diarization_events=native_diarization_events,
+            asr_events=native_asr_events,
+        ),
+        "onnx": _build_pipeline_raw_events(
+            diarization_events=onnx_diarization_events,
+            asr_events=onnx_asr_events,
+        ),
+    }
+
+
+def _build_pipeline_raw_events(
+    *,
+    diarization_events: Sequence[object],
+    asr_events: Sequence[object],
+) -> dict:
+    return {
+        "diarization_event_count": len(diarization_events),
+        "asr_event_count": len(asr_events),
+        "asr_full_text": _last_asr_full_text(asr_events),
+        "asr_text_delta_joined": "".join(
+            str(getattr(event, "text_delta", "")) for event in asr_events
+        ).strip(),
+        "diarization_events": _serialize_diarization_events(diarization_events),
+        "asr_events": _serialize_asr_events(asr_events),
+    }
+
+
+def _serialize_diarization_events(events: Sequence[object]) -> list[dict]:
+    return [
+        {
+            "stream_id": str(getattr(event, "stream_id")),
+            "sequence_id": int(getattr(event, "sequence_id")),
+            "speaker_id": int(getattr(event, "speaker_id")),
+            "start": float(getattr(event, "start")),
+            "end": float(getattr(event, "end")),
+            "event_type": str(getattr(event, "event_type", "diarization")),
+            "is_final": bool(getattr(event, "is_final", True)),
+        }
+        for event in events
+    ]
+
+
+def _serialize_asr_events(events: Sequence[object]) -> list[dict]:
+    return [
+        {
+            "stream_id": str(getattr(event, "stream_id")),
+            "sequence_id": int(getattr(event, "sequence_id")),
+            "token_ids": [int(token_id) for token_id in getattr(event, "token_ids", ())],
+            "text_delta": str(getattr(event, "text_delta")),
+            "full_text": str(getattr(event, "full_text")),
+            "token_times": [
+                [float(start), float(end)]
+                for start, end in getattr(event, "token_times", ())
+            ],
+            "start": _optional_float(getattr(event, "start")),
+            "end": _optional_float(getattr(event, "end")),
+            "event_type": str(getattr(event, "event_type", "asr")),
+            "is_final": bool(getattr(event, "is_final")),
+        }
+        for event in events
+    ]
+
+
+def _last_asr_full_text(events: Sequence[object]) -> str:
+    for event in reversed(events):
+        full_text = str(getattr(event, "full_text", ""))
+        if full_text:
+            return full_text
+    return ""
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _speaker_ids(segments: Sequence[MergedSpeechSegment]) -> tuple[int, ...]:
