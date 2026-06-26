@@ -79,15 +79,16 @@ def _run_native_diarization_events(audio_path: Path):
 
     native_device = resolve_native_device()
     diar_model = SortformerEncLabelModel.from_pretrained(
-        "nvidia/diar_streaming_sortformer_4spk-v2",
+        "nvidia/diar_streaming_sortformer_4spk-v2.1",
         map_location=native_device,
     )
     diar_model = diar_model.to(device=native_device)
     diar_model.eval()
-    diar_model.sortformer_modules.chunk_len = 340
-    diar_model.sortformer_modules.chunk_right_context = 40
-    diar_model.sortformer_modules.fifo_len = 40
-    diar_model.sortformer_modules.spkcache_update_period = 300
+    diar_model.sortformer_modules.chunk_len = 6
+    diar_model.sortformer_modules.chunk_right_context = 7
+    diar_model.sortformer_modules.fifo_len = 188
+    diar_model.sortformer_modules.spkcache_update_period = 144
+    diar_model.sortformer_modules.spkcache_len = 188
 
     predicted_segments = diar_model.diarize(audio=[str(audio_path)], batch_size=1)
     del diar_model
@@ -219,7 +220,9 @@ def _run_onnx_pipeline_segments(
     bytes_per_chunk = 16000 // 10 * 2
     segments = []
     for offset in range(0, len(pcm), bytes_per_chunk):
-        result = service.process(pcm[offset : offset + bytes_per_chunk], stream_id="onnx")
+        result = service.process(
+            pcm[offset : offset + bytes_per_chunk], stream_id="onnx"
+        )
         segments.extend(result.merged_segments)
     segments.extend(service.flush(stream_id="onnx").merged_segments)
     return tuple(segments)
@@ -250,7 +253,9 @@ class NativeDiarizationSegmentParsingTest(unittest.TestCase):
         )
 
     def test_parses_sequence_segment_format(self):
-        self.assertEqual(_parse_native_diarization_segment((0.1, 0.2, 3)), (0.1, 0.2, 3))
+        self.assertEqual(
+            _parse_native_diarization_segment((0.1, 0.2, 3)), (0.1, 0.2, 3)
+        )
 
     def test_parses_dict_segment_format(self):
         self.assertEqual(
