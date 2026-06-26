@@ -1,4 +1,4 @@
-"""Run the native NeMo versus ONNX ASR calibration test on Modal GPU."""
+"""Run native NeMo versus ONNX diarization+ASR pipeline calibration on Modal GPU."""
 
 from __future__ import annotations
 
@@ -9,12 +9,15 @@ from typing import TypedDict
 import modal
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-CALIBRATION_LOG_PATH = Path("ci-logs/calibration.log")
-CALIBRATION_REPORT_PATH = Path("ci-logs/asr_calibration_report.json")
-CALIBRATION_COMMAND_DISPLAY = "bash scripts/ci/run_calibration.sh"
-ASR_CALIBRATION_VOLUME_NAME = os.environ.get(
-    "MODAL_ASR_CALIBRATION_VOLUME",
-    "speaker_diar_ci_asr_calibration",
+CALIBRATION_LOG_PATH = Path("ci-logs/pipeline_calibration.log")
+CALIBRATION_COMMAND_DISPLAY = "bash scripts/ci/run_pipeline_calibration.sh"
+PIPELINE_CALIBRATION_VOLUME_NAME = os.environ.get(
+    "MODAL_PIPELINE_CALIBRATION_VOLUME",
+    "speaker_diar_ci_pipeline_calibration",
+)
+PIPELINE_ALIGNMENT_MODE = os.environ.get(
+    "PIPELINE_ALIGNMENT_MODE",
+    "diarization_timeline",
 )
 
 dockerfile_image = modal.Image.from_dockerfile(
@@ -23,14 +26,14 @@ dockerfile_image = modal.Image.from_dockerfile(
     ignore="./.dockerignore",
 )
 
-app = modal.App("speaker-diar-asr-calibration")
-asr_calibration_volume = modal.Volume.from_name(
-    ASR_CALIBRATION_VOLUME_NAME,
+pipeline_calibration_volume = modal.Volume.from_name(
+    PIPELINE_CALIBRATION_VOLUME_NAME,
     create_if_missing=True,
 )
+app = modal.App("speaker-diar-pipeline-calibration")
 
 
-class CalibrationResult(TypedDict):
+class PipelineCalibrationResult(TypedDict):
     returncode: int
     command: str
     cwd: str
@@ -40,51 +43,62 @@ class CalibrationResult(TypedDict):
     report_path: str
     report_exists: bool
     report: str
+    raw_events_report_path: str
+    raw_events_report_exists: bool
+    raw_events_report: str
 
 
 @app.function(
     image=dockerfile_image,
     gpu=os.environ.get("MODAL_CALIBRATION_GPU", "T4"),
     timeout=60 * 60,
-    volumes={"/app/.modal_ci/asr_calibration": asr_calibration_volume},
+    volumes={"/app/.modal_ci/pipeline_calibration": pipeline_calibration_volume},
 )
-def run_calibration_remote() -> CalibrationResult:
+def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
     import os
     import subprocess
     from pathlib import Path
 
-    volume_root = Path("/app/.modal_ci/asr_calibration")
+    volume_root = Path("/app/.modal_ci/pipeline_calibration")
     logs_dir = volume_root / "ci-logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    report_path = logs_dir / "asr_calibration_report.json"
+    alignment_mode = PIPELINE_ALIGNMENT_MODE
+    report_path = logs_dir / f"pipeline_calibration_report_{alignment_mode}.json"
+    raw_events_report_path = logs_dir / f"pipeline_raw_events_{alignment_mode}.json"
 
     env = os.environ.copy()
     env.update(
         {
-            "ASR_ASSET_DIR": str(volume_root / "onnx_ckpt" / "asr"),
-            "MODAL_ASR_CALIBRATION_VOLUME": ASR_CALIBRATION_VOLUME_NAME,
-            "RUN_NEMOTRON_CALIBRATION": "1",
+            "ASR_ASSET_DIR": str(volume_root / "onnx_ckpt" / "asr" / alignment_mode),
+            "DIAR_ASSET_DIR": str(volume_root),
+            "MODAL_PIPELINE_CALIBRATION_VOLUME": PIPELINE_CALIBRATION_VOLUME_NAME,
+            "PIPELINE_ALIGNMENT_MODE": alignment_mode,
+            "RUN_PIPELINE_CALIBRATION": "1",
             "NEMOTRON_NATIVE_DEVICE": "cuda",
-            "NEMOTRON_CALIBRATION_WAV": (
+            "PIPELINE_CALIBRATION_WAV": (
                 "/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav"
             ),
-            "NEMOTRON_CALIBRATION_REPORT": str(report_path),
+            "PIPELINE_CALIBRATION_REPORT": str(report_path),
+            "PIPELINE_RAW_EVENTS_REPORT": str(raw_events_report_path),
         }
     )
     env_summary_keys = (
         "ASR_ASSET_DIR",
-        "MODAL_ASR_CALIBRATION_VOLUME",
-        "RUN_NEMOTRON_CALIBRATION",
+        "DIAR_ASSET_DIR",
+        "MODAL_PIPELINE_CALIBRATION_VOLUME",
+        "PIPELINE_ALIGNMENT_MODE",
+        "RUN_PIPELINE_CALIBRATION",
         "NEMOTRON_NATIVE_DEVICE",
-        "NEMOTRON_CALIBRATION_WAV",
-        "NEMOTRON_CALIBRATION_REPORT",
-        "NEMOTRON_CALIBRATION_TEST_TARGET",
+        "PIPELINE_CALIBRATION_WAV",
+        "PIPELINE_CALIBRATION_REPORT",
+        "PIPELINE_RAW_EVENTS_REPORT",
+        "PIPELINE_CALIBRATION_TEST_TARGET",
         "PYTHONPATH",
     )
     env_summary = {key: env.get(key, "<unset>") for key in env_summary_keys}
 
     completed = subprocess.run(
-        ["bash", "scripts/ci/run_calibration.sh"],
+        ["bash", "scripts/ci/run_pipeline_calibration.sh"],
         cwd="/app",
         env=env,
         text=True,
@@ -93,6 +107,7 @@ def run_calibration_remote() -> CalibrationResult:
         check=False,
     )
     report_exists = report_path.exists()
+    raw_events_report_exists = raw_events_report_path.exists()
 
     return {
         "returncode": completed.returncode,
@@ -104,13 +119,20 @@ def run_calibration_remote() -> CalibrationResult:
         "report_path": str(report_path),
         "report_exists": report_exists,
         "report": report_path.read_text(encoding="utf-8") if report_exists else "",
+        "raw_events_report_path": str(raw_events_report_path),
+        "raw_events_report_exists": raw_events_report_exists,
+        "raw_events_report": (
+            raw_events_report_path.read_text(encoding="utf-8")
+            if raw_events_report_exists
+            else ""
+        ),
     }
 
 
 @app.local_entrypoint()
 def main() -> None:
     CALIBRATION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    result = run_calibration_remote.remote()
+    result = run_pipeline_calibration_remote.remote()
     return_code = result["returncode"]
     stdout = result["stdout"] or "<empty>"
     stderr = result["stderr"] or "<empty>"
@@ -133,6 +155,8 @@ def main() -> None:
         f"Environment summary:\n{env_summary}\n\n"
         f"Report path: {result['report_path']}\n"
         f"Report exists: {result['report_exists']}\n"
+        f"Raw events report path: {result['raw_events_report_path']}\n"
+        f"Raw events report exists: {result['raw_events_report_exists']}\n"
         f"{failure_hint}\n"
         f"STDOUT:\n{stdout}\n"
         f"STDERR:\n{stderr}\n"
@@ -140,7 +164,18 @@ def main() -> None:
     CALIBRATION_LOG_PATH.write_text(log_text, encoding="utf-8")
 
     if result["report"]:
-        CALIBRATION_REPORT_PATH.write_text(result["report"], encoding="utf-8")
+        report_path = Path(
+            f"ci-logs/pipeline_calibration_report_{PIPELINE_ALIGNMENT_MODE}.json"
+        )
+        report_path.write_text(result["report"], encoding="utf-8")
+    if result["raw_events_report"]:
+        raw_events_report_path = Path(
+            f"ci-logs/pipeline_raw_events_{PIPELINE_ALIGNMENT_MODE}.json"
+        )
+        raw_events_report_path.write_text(
+            result["raw_events_report"],
+            encoding="utf-8",
+        )
 
     if result["returncode"] != 0:
         raise SystemExit(return_code)

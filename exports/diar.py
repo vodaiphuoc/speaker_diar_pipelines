@@ -1,5 +1,6 @@
-# Before runing the script, make sure `speaker_diar_model_export` volume is exist
-# if not, use `modal volume create
+# Before running the script manually, make sure `speaker_diar_model_export`
+# exists, or set DIAR_EXPORT_VOLUME_NAME to another Modal volume.
+# If not, use `modal volume create`.
 # to run this script, in root project directory:
 # ```terminal
 # modal run exports/diar.py
@@ -37,6 +38,7 @@
 # Download the manifest and every file it references into `.onnx_ckpt/diar`.
 # Relative manifest paths require the exported runtime assets to stay together.
 
+import os
 from pathlib import Path
 
 import modal
@@ -49,7 +51,11 @@ dockerfile_image = modal.Image.from_dockerfile(
     ignore="./.dockerignore",
 )
 
-vol = modal.Volume.from_name("speaker_diar_model_export")
+DIAR_EXPORT_VOLUME_NAME = os.environ.get(
+    "DIAR_EXPORT_VOLUME_NAME",
+    "speaker_diar_model_export",
+)
+vol = modal.Volume.from_name(DIAR_EXPORT_VOLUME_NAME, create_if_missing=True)
 app = modal.App("pipeline-inference-v4")
 
 
@@ -100,11 +106,12 @@ def run():
         import torch
         from nemo.collections.asr.models import SortformerEncLabelModel
         from nemo.collections.asr.modules import AudioToMelSpectrogramPreprocessor
+
         from SDP.onnx.artifacts import write_diarization_artifact_manifest
 
-        CHUNK_SIZE = 124
-        RIGHT_CONTEXT = 1
-        FIFO_SIZE = 124
+        CHUNK_SIZE = 6
+        RIGHT_CONTEXT = 7
+        FIFO_SIZE = 188
         UPDATE_PERIOD = 124
         SPEAKER_CACHE_SIZE = 188
 

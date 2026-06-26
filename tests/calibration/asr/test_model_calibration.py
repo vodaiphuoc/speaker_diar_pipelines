@@ -14,52 +14,12 @@ from SDP.onnx.asr.utils.calibration_report import (
     token_frames_to_token_times,
     write_asr_calibration_report,
 )
-
-
-def _int_sequence_or_none(value):
-    if value is None:
-        return None
-    if isinstance(value, torch.Tensor):
-        return tuple(int(item) for item in value.detach().cpu().tolist())
-    if isinstance(value, (list, tuple)):
-        return tuple(int(item) for item in value)
-    return None
-
-
-def _resolve_native_device():
-    requested_device = os.environ.get("NEMOTRON_NATIVE_DEVICE", "cpu").strip()
-    if not requested_device:
-        requested_device = "cpu"
-    device = torch.device(requested_device)
-    if device.type == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError(
-            "CUDA was requested for native NeMo calibration via "
-            "NEMOTRON_NATIVE_DEVICE, but torch.cuda.is_available() is false."
-        )
-    return device
-
-
-def _move_tensor_to_device(value, device):
-    if isinstance(value, torch.Tensor):
-        return value.to(device)
-    return value
-
-
-def _extract_native_transcription_texts(transcriptions):
-    if transcriptions is None:
-        return []
-    if isinstance(transcriptions, str):
-        return [transcriptions]
-    if hasattr(transcriptions, "text"):
-        return [transcriptions.text]
-
-    texts = []
-    for transcription in transcriptions:
-        if hasattr(transcription, "text"):
-            texts.append(transcription.text)
-        else:
-            texts.append(transcription)
-    return texts
+from tests.calibration.support import (
+    extract_native_transcription_texts,
+    int_sequence_or_none,
+    move_tensor_to_device,
+    resolve_native_device,
+)
 
 
 def _load_calibration_pcm(audio_path: Path) -> bytes:
@@ -72,35 +32,35 @@ class NativeTranscriptionExtractionTest(unittest.TestCase):
             text = "xin chào"
 
         self.assertEqual(
-            _extract_native_transcription_texts([HypothesisLike()]),
+            extract_native_transcription_texts([HypothesisLike()]),
             ["xin chào"],
         )
 
     def test_preserves_plain_string_transcriptions(self):
         self.assertEqual(
-            _extract_native_transcription_texts(["xin chào"]),
+            extract_native_transcription_texts(["xin chào"]),
             ["xin chào"],
         )
 
     def test_handles_missing_transcriptions(self):
-        self.assertEqual(_extract_native_transcription_texts(None), [])
+        self.assertEqual(extract_native_transcription_texts(None), [])
 
 
 class NativeDeviceResolutionTest(unittest.TestCase):
     def test_defaults_to_cpu(self):
         with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(_resolve_native_device(), torch.device("cpu"))
+            self.assertEqual(resolve_native_device(), torch.device("cpu"))
 
     def test_accepts_explicit_cpu(self):
         with mock.patch.dict(os.environ, {"NEMOTRON_NATIVE_DEVICE": "cpu"}):
-            self.assertEqual(_resolve_native_device(), torch.device("cpu"))
+            self.assertEqual(resolve_native_device(), torch.device("cpu"))
 
     def test_accepts_cuda_when_available(self):
         with (
             mock.patch.dict(os.environ, {"NEMOTRON_NATIVE_DEVICE": "cuda"}),
             mock.patch("torch.cuda.is_available", return_value=True),
         ):
-            self.assertEqual(_resolve_native_device(), torch.device("cuda"))
+            self.assertEqual(resolve_native_device(), torch.device("cuda"))
 
     def test_rejects_cuda_when_unavailable(self):
         with (
@@ -108,7 +68,7 @@ class NativeDeviceResolutionTest(unittest.TestCase):
             mock.patch("torch.cuda.is_available", return_value=False),
         ):
             with self.assertRaisesRegex(RuntimeError, "CUDA was requested"):
-                _resolve_native_device()
+                resolve_native_device()
 
 
 class CalibrationAudioLoadingTest(unittest.TestCase):
@@ -146,7 +106,7 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
             )
         )
         pcm = _load_calibration_pcm(audio_path)
-        native_device = _resolve_native_device()
+        native_device = resolve_native_device()
         native = nemo_asr.models.ASRModel.from_pretrained(
             "nvidia/nemotron-3.5-asr-streaming-0.6b",
             map_location=native_device,
@@ -165,7 +125,7 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
 
         streaming_buffer_iter = iter(streaming_buffer)
         caches = tuple(
-            _move_tensor_to_device(cache, native_device)
+            move_tensor_to_device(cache, native_device)
             for cache in native.encoder.get_initial_cache_state(batch_size=1)
         )
         pred_out_stream = None
@@ -173,8 +133,8 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
         previous_hypotheses = None
         with torch.inference_mode():
             for chunk, chunk_length in streaming_buffer_iter:
-                chunk = _move_tensor_to_device(chunk, native_device)
-                chunk_length = _move_tensor_to_device(chunk_length, native_device)
+                chunk = move_tensor_to_device(chunk, native_device)
+                chunk_length = move_tensor_to_device(chunk_length, native_device)
                 (
                     pred_out_stream,
                     transcribed_texts,
@@ -198,14 +158,14 @@ class NemotronONNXCalibrationTest(unittest.TestCase):
                 )
                 caches = channel_cache, time_cache, channel_cache_length
 
-        native_transcriptions = _extract_native_transcription_texts(transcribed_texts)
+        native_transcriptions = extract_native_transcription_texts(transcribed_texts)
         native_text = native_transcriptions[0] if native_transcriptions else ""
         native_tokens = ()
         native_token_times = None
         if previous_hypotheses:
             native_hypothesis = previous_hypotheses[0]
             native_tokens = tuple(int(token) for token in native_hypothesis.y_sequence)
-            native_token_frames = _int_sequence_or_none(
+            native_token_frames = int_sequence_or_none(
                 getattr(native_hypothesis, "timestamp", None)
             )
             native_token_times = token_frames_to_token_times(native_token_frames)

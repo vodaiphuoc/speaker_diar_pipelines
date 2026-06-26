@@ -4,8 +4,10 @@ set -euo pipefail
 ASR_ASSET_DIR="${ASR_ASSET_DIR:-/app/.onnx_ckpt/asr}"
 CALIBRATION_WAV="${NEMOTRON_CALIBRATION_WAV:-/app/tests/fixtures/bacsidatnhkhoavitadoc_1.wav}"
 CALIBRATION_REPORT="${NEMOTRON_CALIBRATION_REPORT:-/app/ci-logs/asr_calibration_report.json}"
-CALIBRATION_TEST_TARGET="${NEMOTRON_CALIBRATION_TEST_TARGET:-tests.test_asr_calibration.NemotronONNXCalibrationTest}"
+CALIBRATION_TEST_TARGET="${NEMOTRON_CALIBRATION_TEST_TARGET:-tests.calibration.asr.test_model_calibration.NemotronONNXCalibrationTest}"
 
+echo "Exporting latest ASR ONNX artifacts into ASR calibration volume path: ${ASR_ASSET_DIR}"
+rm -rf "${ASR_ASSET_DIR}"
 mkdir -p "${ASR_ASSET_DIR}"
 
 python -m exports.asr --output-dir "${ASR_ASSET_DIR}"
@@ -26,6 +28,7 @@ ruff check \
   SDP/onnx/asr \
   SDP/onnx/preprocess/audio_preprocessing.py \
   SDP/onnx/streaming_service.py \
+  SDP/pipeline \
   exports/asr.py \
   tests \
   run_phase_three.py
@@ -46,7 +49,7 @@ print(f"sys.executable={sys.executable}")
 print(f"sys.path[:5]={sys.path[:5]}")
 for module_name in (
     "SDP",
-    "tests.test_asr_calibration",
+    "tests.calibration.asr.test_model_calibration",
     "nemo",
     "onnxruntime",
 ):

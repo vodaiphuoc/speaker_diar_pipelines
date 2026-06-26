@@ -7,6 +7,7 @@ ruff check \
   SDP/onnx/asr \
   SDP/onnx/preprocess/audio_preprocessing.py \
   SDP/onnx/streaming_service.py \
+  SDP/pipeline \
   tests \
   run_phase_three.py
 python -m compileall -q SDP tests run_phase_three.py
