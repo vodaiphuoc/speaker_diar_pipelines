@@ -80,6 +80,7 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
             ),
             "PIPELINE_CALIBRATION_REPORT": str(report_path),
             "PIPELINE_RAW_EVENTS_REPORT": str(raw_events_report_path),
+            "POST_PROCESSING_CONFIG": "/app/configs/post_processing.yaml",
         }
     )
     env_summary_keys = (

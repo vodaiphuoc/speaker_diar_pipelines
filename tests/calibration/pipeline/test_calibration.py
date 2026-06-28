@@ -95,7 +95,16 @@ def _run_native_diarization_events(audio_path: Path):
     diar_model.sortformer_modules.spkcache_update_period = 144
     diar_model.sortformer_modules.spkcache_len = 188
 
-    predicted_segments = diar_model.diarize(audio=[str(audio_path)], batch_size=1)
+    post_processing_config_path = Path(
+        os.environ.get("POST_PROCESSING_CONFIG", "/app/configs/post_processing.yaml")
+    )
+
+    predicted_segments = diar_model.diarize(
+        audio=[str(audio_path)],
+        batch_size=1,
+        postprocessing_yaml=post_processing_config_path,
+    )
+    print(predicted_segments)
     del diar_model
     gc.collect()
 
