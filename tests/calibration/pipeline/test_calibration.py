@@ -81,8 +81,6 @@ def _native_diarization_segments_to_events(
 
 def _run_native_diarization_events(audio_path: Path):
     from nemo.collections.asr.models import SortformerEncLabelModel
-    from nemo.collections.asr.parts.mixins.diarization import DiarizeConfig
-    from nemo.collections.asr.parts.utils.vad_utils import PostProcessingParams
 
     native_device = resolve_native_device()
     diar_model = SortformerEncLabelModel.from_pretrained(
