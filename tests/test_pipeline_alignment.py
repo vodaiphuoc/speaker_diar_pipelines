@@ -58,6 +58,24 @@ class PipelineAlignmentTest(unittest.TestCase):
         self.assertEqual(segments[1].speaker_id, 1)
         self.assertEqual(segments[1].text, "chào")
 
+    def test_diarization_timeline_sorts_speaker_grouped_events_by_start_time(self):
+        segments = merge_asr_to_diarization_timeline(
+            diarization_events=(
+                diar_event(0, speaker_id=0, start=2.0, end=3.0),
+                diar_event(1, speaker_id=1, start=0.0, end=1.0),
+                diar_event(2, speaker_id=1, start=1.0, end=2.0),
+            ),
+            asr_events=(
+                asr_event(0, "early", start=0.2, end=0.4, token_ids=(10,)),
+                asr_event(1, "middle", start=1.2, end=1.4, token_ids=(11,)),
+                asr_event(2, "late", start=2.2, end=2.4, token_ids=(12,)),
+            ),
+        )
+
+        self.assertEqual([segment.start for segment in segments], [0.0, 1.0, 2.0])
+        self.assertEqual([segment.speaker_id for segment in segments], [1, 1, 0])
+        self.assertEqual([segment.text for segment in segments], ["early", "middle", "late"])
+
     def test_legacy_merge_name_preserves_diarization_timeline_behavior(self):
         self.assertEqual(
             merge_diarization_asr_events(

@@ -220,6 +220,21 @@ class StreamingServiceContextTest(unittest.TestCase):
         self.assertEqual(first.sequence_id, 0)
         self.assertEqual(second.sequence_id, 1)
 
+    def test_diarization_outputs_are_enqueued_by_start_time_across_speakers(self):
+        service = self.make_service()
+
+        result = service._enqueue_diarization_outputs(
+            [
+                [[2.0, 2.5]],
+                [[0.4, 0.8], [1.2, 1.6]],
+            ],
+            stream_id="s1",
+        )
+
+        self.assertEqual([event.start for event in result], [0.4, 1.2, 2.0])
+        self.assertEqual([event.speaker_id for event in result], [1, 1, 0])
+        self.assertEqual([event.sequence_id for event in result], [0, 1, 2])
+
 
 class FakeStreamingBranch:
     def __init__(self, *events):

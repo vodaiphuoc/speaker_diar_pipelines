@@ -146,6 +146,46 @@ class PipelineCalibrationReportTest(unittest.TestCase):
         )
         self.assertEqual(report["raw_events"]["onnx"]["asr_events"], [])
 
+    def test_raw_diarization_events_are_serialized_by_start_time(self):
+        late_event = StreamingDiarizationEvent(
+            stream_id="native",
+            sequence_id=0,
+            speaker_id=0,
+            start=2.0,
+            end=2.5,
+        )
+        early_event = StreamingDiarizationEvent(
+            stream_id="native",
+            sequence_id=1,
+            speaker_id=1,
+            start=0.4,
+            end=0.8,
+        )
+
+        report = build_pipeline_raw_events_report(
+            audio_file="sample.wav",
+            alignment_mode="diarization_timeline",
+            native_diarization_events=(late_event, early_event),
+            native_asr_events=(),
+            onnx_diarization_events=(late_event, early_event),
+            onnx_asr_events=(),
+        )
+
+        self.assertEqual(
+            [
+                event["start"]
+                for event in report["raw_events"]["native"]["diarization_events"]
+            ],
+            [0.4, 2.0],
+        )
+        self.assertEqual(
+            [
+                event["start"]
+                for event in report["raw_events"]["onnx"]["diarization_events"]
+            ],
+            [0.4, 2.0],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

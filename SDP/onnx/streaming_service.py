@@ -218,23 +218,30 @@ class StreamingDiarizerOnnxService(object):
         self, outputs, stream_id: str
     ) -> list[StreamingDiarizationEvent]:
         events = []
-        for spk, segments in enumerate(outputs):
-            for start, end in segments:
-                event = StreamingDiarizationEvent(
-                    stream_id=stream_id,
-                    sequence_id=self._next_sequence_id,
-                    speaker_id=spk,
-                    start=round((start), 2),
-                    end=round(float(end), 2),
-                )
-                self._next_sequence_id += 1
-                self._event_queue.append(event)
-                if self._async_event_queue is not None:
-                    try:
-                        self._async_event_queue.put_nowait(event)
-                    except asyncio.QueueFull as exc:
-                        raise RuntimeError("Async event queue is full") from exc
-                events.append(event)
+        diarization_segments = sorted(
+            (
+                (float(start), float(end), spk)
+                for spk, segments in enumerate(outputs)
+                for start, end in segments
+            ),
+            key=lambda segment: segment[0],
+        )
+        for start, end, spk in diarization_segments:
+            event = StreamingDiarizationEvent(
+                stream_id=stream_id,
+                sequence_id=self._next_sequence_id,
+                speaker_id=spk,
+                start=round(start, 2),
+                end=round(end, 2),
+            )
+            self._next_sequence_id += 1
+            self._event_queue.append(event)
+            if self._async_event_queue is not None:
+                try:
+                    self._async_event_queue.put_nowait(event)
+                except asyncio.QueueFull as exc:
+                    raise RuntimeError("Async event queue is full") from exc
+            events.append(event)
         return events
 
     def _process_feature_chunk(self, feature_chunk: FeatureBufferChunk):

@@ -62,8 +62,11 @@ def _native_diarization_segments_to_events(
     segments, stream_id: str = "native"
 ) -> tuple[StreamingDiarizationEvent, ...]:
     events = []
-    for sequence_id, segment in enumerate(segments):
-        start, end, speaker_id = _parse_native_diarization_segment(segment)
+    parsed_segments = sorted(
+        (_parse_native_diarization_segment(segment) for segment in segments),
+        key=lambda segment: segment[0],
+    )
+    for sequence_id, (start, end, speaker_id) in enumerate(parsed_segments):
         events.append(
             StreamingDiarizationEvent(
                 stream_id=stream_id,
@@ -95,6 +98,13 @@ def _run_native_diarization_events(audio_path: Path):
     diar_model.sortformer_modules.spkcache_len = 188
 
     diar_config = DiarizeConfig(
+        session_len_sect=-1,
+        batch_size=1,
+        num_workers=1,
+        sample_rate=None,
+        postprocessing_yaml=None,
+        verbose=True,
+        include_tensor_outputs=False,
         postprocessing_params=PostProcessingParams(
             onset=0.5,
             offset=0.5,
@@ -102,7 +112,8 @@ def _run_native_diarization_events(audio_path: Path):
             pad_offset=0.0,
             min_duration_on=0.1,
             min_duration_off=0.1,
-        )
+        ),
+        max_num_of_spks=2,
     )
     predicted_segments = diar_model.diarize(
         audio=[str(audio_path)], batch_size=1, override_config=diar_config
@@ -302,6 +313,19 @@ class NativeDiarizationSegmentParsingTest(unittest.TestCase):
             ),
             (0.1, 0.2, 4),
         )
+
+    def test_native_diarization_segments_to_events_sorts_by_start_time(self):
+        events = _native_diarization_segments_to_events(
+            (
+                (2.0, 2.5, "speaker_0"),
+                (0.4, 0.8, "speaker_1"),
+                (1.2, 1.6, "speaker_1"),
+            )
+        )
+
+        self.assertEqual([event.start for event in events], [0.4, 1.2, 2.0])
+        self.assertEqual([event.speaker_id for event in events], [1, 1, 0])
+        self.assertEqual([event.sequence_id for event in events], [0, 1, 2])
 
 
 class PipelineAlignmentModeResolutionTest(unittest.TestCase):

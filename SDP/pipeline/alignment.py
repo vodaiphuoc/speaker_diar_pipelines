@@ -43,9 +43,7 @@ def merge_asr_to_diarization_timeline(
     asr_events: Sequence[ASREventLike],
 ) -> tuple[MergedSpeechSegment, ...]:
     segments: list[MergedSpeechSegment] = []
-    valid_diarization_events = [
-        event for event in diarization_events if _is_valid_diarization_event(event)
-    ]
+    valid_diarization_events = _sorted_valid_diarization_events(diarization_events)
     valid_asr_events = [event for event in asr_events if _is_valid_asr_event(event)]
 
     for diarization_event in valid_diarization_events:
@@ -70,9 +68,7 @@ def merge_diarization_to_asr_timeline(
     diarization_events: Sequence[DiarizationEventLike],
     asr_events: Sequence[ASREventLike],
 ) -> tuple[MergedSpeechSegment, ...]:
-    valid_diarization_events = [
-        event for event in diarization_events if _is_valid_diarization_event(event)
-    ]
+    valid_diarization_events = _sorted_valid_diarization_events(diarization_events)
     valid_asr_events = [event for event in asr_events if _is_valid_asr_event(event)]
     return tuple(
         _build_asr_timeline_segment(asr_event, valid_diarization_events)
@@ -308,6 +304,15 @@ def _is_valid_diarization_event(event: object) -> bool:
     return all(
         hasattr(event, attr)
         for attr in ("stream_id", "sequence_id", "speaker_id", "start", "end")
+    )
+
+
+def _sorted_valid_diarization_events(
+    events: Sequence[DiarizationEventLike],
+) -> list[DiarizationEventLike]:
+    return sorted(
+        (event for event in events if _is_valid_diarization_event(event)),
+        key=lambda event: float(event.start),
     )
 
 

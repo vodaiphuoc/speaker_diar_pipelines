@@ -150,7 +150,7 @@ def _serialize_diarization_events(events: Sequence[object]) -> list[dict]:
             "event_type": str(getattr(event, "event_type", "diarization")),
             "is_final": bool(getattr(event, "is_final", True)),
         }
-        for event in events
+        for event in sorted(events, key=lambda event: float(getattr(event, "start")))
     ]
 
 
