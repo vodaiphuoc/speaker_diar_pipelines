@@ -7,9 +7,7 @@ on:
   push:
     branches:
       - merge-results
-  schedule:
-    - cron: "0 18 * * *"
-  workflow_dispatch:
+      - diar_post_processing_config
 
 permissions:
   contents: read

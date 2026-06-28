@@ -78,6 +78,8 @@ def _native_diarization_segments_to_events(
 
 def _run_native_diarization_events(audio_path: Path):
     from nemo.collections.asr.models import SortformerEncLabelModel
+    from nemo.collections.asr.parts.mixins.diarization import DiarizeConfig
+    from nemo.collections.asr.parts.utils.vad_utils import PostProcessingParams
 
     native_device = resolve_native_device()
     diar_model = SortformerEncLabelModel.from_pretrained(
@@ -92,7 +94,19 @@ def _run_native_diarization_events(audio_path: Path):
     diar_model.sortformer_modules.spkcache_update_period = 144
     diar_model.sortformer_modules.spkcache_len = 188
 
-    predicted_segments = diar_model.diarize(audio=[str(audio_path)], batch_size=1)
+    diar_config = DiarizeConfig(
+        postprocessing_params=PostProcessingParams(
+            onset=0.5,
+            offset=0.5,
+            pad_onset=0.0,
+            pad_offset=0.0,
+            min_duration_on=0.1,
+            min_duration_off=0.1,
+        )
+    )
+    predicted_segments = diar_model.diarize(
+        audio=[str(audio_path)], batch_size=1, override_config=diar_config
+    )
     del diar_model
     gc.collect()
 
