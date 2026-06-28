@@ -97,27 +97,7 @@ def _run_native_diarization_events(audio_path: Path):
     diar_model.sortformer_modules.spkcache_update_period = 144
     diar_model.sortformer_modules.spkcache_len = 188
 
-    diar_config = DiarizeConfig(
-        session_len_sect=-1,
-        batch_size=1,
-        num_workers=1,
-        sample_rate=None,
-        postprocessing_yaml=None,
-        verbose=True,
-        include_tensor_outputs=False,
-        postprocessing_params=PostProcessingParams(
-            onset=0.5,
-            offset=0.5,
-            pad_onset=0.0,
-            pad_offset=0.0,
-            min_duration_on=0.1,
-            min_duration_off=0.1,
-        ),
-        max_num_of_spks=2,
-    )
-    predicted_segments = diar_model.diarize(
-        audio=[str(audio_path)], batch_size=1, override_config=diar_config
-    )
+    predicted_segments = diar_model.diarize(audio=[str(audio_path)], batch_size=1)
     del diar_model
     gc.collect()
 
