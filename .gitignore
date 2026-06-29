@@ -11,3 +11,4 @@ model.json
 **/*.data
 .ci_artifacts/
 ci-logs/
+.env
