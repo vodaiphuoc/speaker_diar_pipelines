@@ -3,7 +3,7 @@ name: Qwen3 Pipeline Calibration
 on:
   pull_request:
     branches:
-      - qwen_asr
+      - main
   push:
     branches:
       - qwen_asr
@@ -18,6 +18,7 @@ concurrency:
 jobs:
   export-diarization-artifacts:
     name: Export latest diarization ONNX artifacts
+    if: github.event_name != 'pull_request' || github.head_ref == 'qwen_asr'
     runs-on: ubuntu-latest
     environment: TEST-CI-GPU
     timeout-minutes: 300
@@ -78,6 +79,7 @@ jobs:
 
   qwen3-pipeline-calibration:
     name: Sortformer ONNX plus Qwen3-ASR pipeline calibration on Modal (${{ matrix.alignment_mode }})
+    if: github.event_name != 'pull_request' || github.head_ref == 'qwen_asr'
     needs: export-diarization-artifacts
     runs-on: ubuntu-latest
     environment: TEST-CI-GPU
@@ -94,6 +96,7 @@ jobs:
       MODAL_PIPELINE_CALIBRATION_VOLUME: speaker_diar_ci_pipeline_qwen3_calibration
       PIPELINE_ALIGNMENT_MODE: ${{ matrix.alignment_mode }}
       PIPELINE_ASR_BACKEND: qwen3_modal
+      PIPELINE_CALIBRATION_TEST_TARGET: tests.calibration.pipeline.test_calibration.Qwen3PipelineCalibrationTest
       MODAL_CALIBRATION_GPU: L4:2
     steps:
       - name: Check out repository

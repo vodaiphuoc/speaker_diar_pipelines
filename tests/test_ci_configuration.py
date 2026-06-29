@@ -163,7 +163,10 @@ class DockerAndWorkflowTest(unittest.TestCase):
             PROJECT_ROOT / ".github" / "workflows" / "qwen3-pipeline-calibration.yml"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('ASR_BACKEND="${PIPELINE_ASR_BACKEND:-nemotron_onnx}"', calibration_script)
+        self.assertIn(
+            'ASR_BACKEND="${PIPELINE_ASR_BACKEND:-nemotron_onnx}"',
+            calibration_script,
+        )
         self.assertIn('qwen3_modal)', calibration_script)
         self.assertIn("Skipping ASR ONNX export for Qwen3", calibration_script)
         self.assertIn("Qwen3PipelineCalibrationTest", calibration_script)
@@ -172,11 +175,24 @@ class DockerAndWorkflowTest(unittest.TestCase):
         self.assertIn("print(log_text, flush=True)", modal_runner)
         self.assertNotIn("qwen3_modal", old_workflow)
         self.assertNotIn("qwen3-pipeline-calibration", old_workflow)
+        self.assertIn(
+            "if: github.event_name != 'pull_request' || github.head_ref != 'qwen_asr'",
+            old_workflow,
+        )
         self.assertIn("name: Qwen3 Pipeline Calibration", qwen3_workflow)
-        self.assertIn("branches:\n      - qwen_asr", qwen3_workflow)
+        self.assertIn("pull_request:\n    branches:\n      - main", qwen3_workflow)
+        self.assertIn("push:\n    branches:\n      - qwen_asr", qwen3_workflow)
+        self.assertIn(
+            "if: github.event_name != 'pull_request' || github.head_ref == 'qwen_asr'",
+            qwen3_workflow,
+        )
         self.assertNotIn("workflow_dispatch", qwen3_workflow)
         self.assertNotIn("schedule:", qwen3_workflow)
         self.assertIn("PIPELINE_ASR_BACKEND: qwen3_modal", qwen3_workflow)
+        self.assertIn(
+            "PIPELINE_CALIBRATION_TEST_TARGET: tests.calibration.pipeline.test_calibration.Qwen3PipelineCalibrationTest",
+            qwen3_workflow,
+        )
         self.assertIn(
             "MODAL_PIPELINE_CALIBRATION_VOLUME: speaker_diar_ci_pipeline_qwen3_calibration",
             qwen3_workflow,

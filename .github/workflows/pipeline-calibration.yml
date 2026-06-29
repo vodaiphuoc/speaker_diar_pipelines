@@ -21,6 +21,7 @@ concurrency:
 jobs:
   export-diarization-artifacts:
     name: Export latest diarization ONNX artifacts
+    if: github.event_name != 'pull_request' || github.head_ref != 'qwen_asr'
     runs-on: ubuntu-latest
     environment: TEST-CI-GPU
     timeout-minutes: 300
@@ -81,6 +82,7 @@ jobs:
 
   pipeline-calibration:
     name: Native NeMo versus ONNX pipeline calibration on Modal (${{ matrix.alignment_mode }})
+    if: github.event_name != 'pull_request' || github.head_ref != 'qwen_asr'
     needs: export-diarization-artifacts
     runs-on: ubuntu-latest
     environment: TEST-CI-GPU
