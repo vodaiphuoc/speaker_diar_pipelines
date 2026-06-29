@@ -2,6 +2,7 @@ import gc
 import os
 import re
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 import torch
@@ -294,6 +295,45 @@ def _merge_pipeline_events_for_calibration(diarization_events, asr_events):
     )
 
 
+def _retag_asr_events(asr_events, stream_id: str):
+    return tuple(replace(event, stream_id=stream_id) for event in asr_events)
+
+
+def _build_qwen3_pipeline_calibration_reports(audio_path: Path, alignment_mode: str):
+    native_diarization_events = _run_native_diarization_events(audio_path)
+    (
+        onnx_diarization_events,
+        onnx_asr_events,
+        onnx_segments,
+    ) = _run_onnx_pipeline_events(audio_path, alignment_mode)
+    native_asr_events = _retag_asr_events(onnx_asr_events, stream_id="native")
+    native_segments = merge_pipeline_events(
+        diarization_events=native_diarization_events,
+        asr_events=native_asr_events,
+        alignment_mode=alignment_mode,
+    )
+    return (
+        build_pipeline_calibration_report(
+            audio_file=str(audio_path),
+            alignment_mode=alignment_mode,
+            native_segments=native_segments,
+            onnx_segments=onnx_segments,
+            native_diarization_events=native_diarization_events,
+            native_asr_events=native_asr_events,
+            onnx_diarization_events=onnx_diarization_events,
+            onnx_asr_events=onnx_asr_events,
+        ),
+        build_pipeline_raw_events_report(
+            audio_file=str(audio_path),
+            alignment_mode=alignment_mode,
+            native_diarization_events=native_diarization_events,
+            native_asr_events=native_asr_events,
+            onnx_diarization_events=onnx_diarization_events,
+            onnx_asr_events=onnx_asr_events,
+        ),
+    )
+
+
 class NativeDiarizationSegmentParsingTest(unittest.TestCase):
     def test_parses_documented_string_segment_format(self):
         self.assertEqual(
@@ -473,6 +513,77 @@ class OnnxPipelineEventCollectionTest(unittest.TestCase):
             qwen_actor,
         )
 
+    def test_qwen3_report_populates_native_pipeline_from_native_diarization(self):
+        native_diarization_event = StreamingDiarizationEvent(
+            stream_id="native",
+            sequence_id=0,
+            speaker_id=1,
+            start=0.0,
+            end=1.0,
+        )
+        onnx_diarization_event = StreamingDiarizationEvent(
+            stream_id="onnx",
+            sequence_id=0,
+            speaker_id=2,
+            start=0.0,
+            end=1.0,
+        )
+        onnx_asr_event = StreamingASREvent(
+            stream_id="onnx",
+            sequence_id=0,
+            token_ids=(),
+            text_delta="xin",
+            full_text="xin",
+            token_times=(),
+            start=0.0,
+            end=1.0,
+            is_final=True,
+        )
+        onnx_segment = MergedSpeechSegment(
+            stream_id="onnx",
+            sequence_id=0,
+            speaker_id=2,
+            start=0.0,
+            end=1.0,
+            text="xin",
+        )
+
+        with (
+            unittest.mock.patch(
+                f"{__name__}._run_native_diarization_events",
+                return_value=(native_diarization_event,),
+            ),
+            unittest.mock.patch(
+                f"{__name__}._run_onnx_pipeline_events",
+                return_value=(
+                    (onnx_diarization_event,),
+                    (onnx_asr_event,),
+                    (onnx_segment,),
+                ),
+            ),
+        ):
+            report, raw_events_report = _build_qwen3_pipeline_calibration_reports(
+                Path("sample.wav"),
+                "diarization_timeline",
+            )
+
+        self.assertEqual(report["native_pipeline"]["full_text"], "xin")
+        self.assertEqual(report["native_pipeline"]["segments"][0]["speaker_id"], 1)
+        self.assertEqual(report["native_pipeline"]["segments"][0]["stream_id"], "native")
+        self.assertEqual(report["onnx_pipeline"]["segments"][0]["speaker_id"], 2)
+        self.assertEqual(
+            raw_events_report["raw_events"]["native"]["diarization_event_count"],
+            1,
+        )
+        self.assertEqual(
+            raw_events_report["raw_events"]["native"]["asr_event_count"],
+            1,
+        )
+        self.assertEqual(
+            raw_events_report["raw_events"]["native"]["asr_events"][0]["stream_id"],
+            "native",
+        )
+
 
 @unittest.skipUnless(
     os.environ.get("RUN_PIPELINE_CALIBRATION") == "1",
@@ -553,21 +664,9 @@ class Qwen3PipelineCalibrationTest(unittest.TestCase):
             )
         )
         alignment_mode = _resolve_pipeline_alignment_mode()
-        (
-            onnx_diarization_events,
-            onnx_asr_events,
-            onnx_segments,
-        ) = _run_onnx_pipeline_events(audio_path, alignment_mode)
-
-        report = build_pipeline_calibration_report(
-            audio_file=str(audio_path),
-            alignment_mode=alignment_mode,
-            native_segments=(),
-            onnx_segments=onnx_segments,
-            native_diarization_events=(),
-            native_asr_events=(),
-            onnx_diarization_events=onnx_diarization_events,
-            onnx_asr_events=onnx_asr_events,
+        report, raw_events_report = _build_qwen3_pipeline_calibration_reports(
+            audio_path,
+            alignment_mode,
         )
         calibration_report_path = os.environ.get(
             "PIPELINE_CALIBRATION_REPORT",
@@ -579,30 +678,38 @@ class Qwen3PipelineCalibrationTest(unittest.TestCase):
                 "PIPELINE_RAW_EVENTS_REPORT",
                 str(_raw_events_report_path(calibration_report_path)),
             ),
-            build_pipeline_raw_events_report(
-                audio_file=str(audio_path),
-                alignment_mode=alignment_mode,
-                native_diarization_events=(),
-                native_asr_events=(),
-                onnx_diarization_events=onnx_diarization_events,
-                onnx_asr_events=onnx_asr_events,
-            ),
+            raw_events_report,
         )
 
         self.assertGreater(
-            len(onnx_diarization_events),
+            len(report["native_pipeline"]["segments"]),
             0,
-            "Qwen3 pipeline produced no diarization events.",
+            "Qwen3 native-diarization pipeline produced no merged segments.",
         )
         self.assertGreater(
-            len(onnx_asr_events),
+            len(report["onnx_pipeline"]["segments"]),
             0,
-            "Qwen3 pipeline produced no ASR events.",
+            "Qwen3 ONNX-diarization pipeline produced no merged segments.",
         )
         self.assertGreater(
-            len(onnx_segments),
+            raw_events_report["raw_events"]["native"]["diarization_event_count"],
             0,
-            "Qwen3 pipeline produced no merged diarization/ASR segments.",
+            "Qwen3 pipeline produced no native diarization events.",
+        )
+        self.assertGreater(
+            raw_events_report["raw_events"]["native"]["asr_event_count"],
+            0,
+            "Qwen3 pipeline produced no native-side Qwen3 ASR events.",
+        )
+        self.assertGreater(
+            raw_events_report["raw_events"]["onnx"]["diarization_event_count"],
+            0,
+            "Qwen3 pipeline produced no ONNX diarization events.",
+        )
+        self.assertGreater(
+            raw_events_report["raw_events"]["onnx"]["asr_event_count"],
+            0,
+            "Qwen3 pipeline produced no ONNX-side Qwen3 ASR events.",
         )
 
 
