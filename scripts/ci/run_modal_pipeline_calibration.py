@@ -23,6 +23,10 @@ PIPELINE_ASR_BACKEND = os.environ.get(
     "PIPELINE_ASR_BACKEND",
     "nemotron_onnx",
 )
+PIPELINE_CALIBRATION_TEST_TARGET = os.environ.get(
+    "PIPELINE_CALIBRATION_TEST_TARGET",
+    "",
+)
 
 dockerfile_image = modal.Image.from_dockerfile(
     ROOT_DIR / "docker" / "Dockerfile_calibration_gpu",
@@ -60,7 +64,12 @@ class PipelineCalibrationResult(TypedDict):
     timeout=60 * 60,
     volumes={"/app/.modal_ci/pipeline_calibration": pipeline_calibration_volume},
 )
-def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
+def run_pipeline_calibration_remote(
+    alignment_mode: str,
+    asr_backend: str,
+    calibration_volume_name: str,
+    calibration_test_target: str,
+) -> PipelineCalibrationResult:
     import os
     import subprocess
     from pathlib import Path
@@ -68,8 +77,6 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
     volume_root = Path("/app/.modal_ci/pipeline_calibration")
     logs_dir = volume_root / "ci-logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    alignment_mode = PIPELINE_ALIGNMENT_MODE
-    asr_backend = PIPELINE_ASR_BACKEND
     report_path = (
         logs_dir / f"pipeline_calibration_report_{asr_backend}_{alignment_mode}.json"
     )
@@ -82,7 +89,7 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
         {
             "ASR_ASSET_DIR": str(volume_root / "onnx_ckpt" / "asr" / alignment_mode),
             "DIAR_ASSET_DIR": str(volume_root),
-            "MODAL_PIPELINE_CALIBRATION_VOLUME": PIPELINE_CALIBRATION_VOLUME_NAME,
+            "MODAL_PIPELINE_CALIBRATION_VOLUME": calibration_volume_name,
             "PIPELINE_ALIGNMENT_MODE": alignment_mode,
             "PIPELINE_ASR_BACKEND": asr_backend,
             "RUN_PIPELINE_CALIBRATION": "1",
@@ -94,6 +101,8 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
             "PIPELINE_RAW_EVENTS_REPORT": str(raw_events_report_path),
         }
     )
+    if calibration_test_target:
+        env["PIPELINE_CALIBRATION_TEST_TARGET"] = calibration_test_target
     env_summary_keys = (
         "ASR_ASSET_DIR",
         "DIAR_ASSET_DIR",
@@ -145,7 +154,12 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
 @app.local_entrypoint()
 def main() -> None:
     CALIBRATION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    result = run_pipeline_calibration_remote.remote()
+    result = run_pipeline_calibration_remote.remote(
+        PIPELINE_ALIGNMENT_MODE,
+        PIPELINE_ASR_BACKEND,
+        PIPELINE_CALIBRATION_VOLUME_NAME,
+        PIPELINE_CALIBRATION_TEST_TARGET,
+    )
     return_code = result["returncode"]
     stdout = result["stdout"] or "<empty>"
     stderr = result["stderr"] or "<empty>"
