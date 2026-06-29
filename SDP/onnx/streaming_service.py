@@ -17,6 +17,7 @@ from SDP.onnx.asr.streaming import (
     StreamingASRSession,
     create_nemotron_streaming_session_from_manifest,
 )
+from SDP.qwen3_asr import create_qwen3_asr_modal_session
 
 # from SDP.onnx.diarization.nemo_vad_utils import ts_vad_post_processing
 from SDP.onnx.diarization.post_processing import StreamingDiarizationPostProcessor
@@ -296,7 +297,7 @@ class StreamingDiarizationASROnnxService:
     def from_manifests(
         cls,
         diarization_manifest_path: str | Path,
-        asr_manifest_path: str | Path,
+        asr_manifest_path: str | Path | None = None,
         device: Literal["cpu", "cuda"] = "cpu",
         target_language: str = "vi-VN",
         post_processing_config: PostProcessingParams = PostProcessingParams(),
@@ -307,16 +308,26 @@ class StreamingDiarizationASROnnxService:
         enable_async_queue: bool = False,
         async_queue_maxsize: int = 0,
         alignment_mode: AlignmentMode = "diarization_timeline",
+        asr_backend: Literal["nemotron_onnx", "qwen3_modal"] = "nemotron_onnx",
+        qwen3_asr_config=None,
+        qwen3_asr_remote_actor=None,
     ) -> "StreamingDiarizationASROnnxService":
-        diarization_artifact = load_diarization_artifact_manifest(
-            diarization_manifest_path
-        )
-        asr_artifact = load_asr_artifact_manifest(asr_manifest_path)
-        if diarization_artifact.preprocessor.onnx == asr_artifact.preprocessor.onnx:
-            raise ValueError(
-                "ASR and diarization require independent preprocessors; "
-                "their manifests resolve to the same ONNX file"
+        if asr_backend not in ("nemotron_onnx", "qwen3_modal"):
+            raise ValueError("asr_backend must be 'nemotron_onnx' or 'qwen3_modal'")
+        if asr_backend == "nemotron_onnx":
+            if asr_manifest_path is None:
+                raise ValueError(
+                    "asr_manifest_path is required for nemotron_onnx ASR backend"
+                )
+            diarization_artifact = load_diarization_artifact_manifest(
+                diarization_manifest_path
             )
+            asr_artifact = load_asr_artifact_manifest(asr_manifest_path)
+            if diarization_artifact.preprocessor.onnx == asr_artifact.preprocessor.onnx:
+                raise ValueError(
+                    "ASR and diarization require independent preprocessors; "
+                    "their manifests resolve to the same ONNX file"
+                )
 
         diarization_service = StreamingDiarizerOnnxService.from_manifest(
             diarization_manifest_path,
@@ -329,11 +340,17 @@ class StreamingDiarizationASROnnxService:
             enable_async_queue=enable_async_queue,
             async_queue_maxsize=async_queue_maxsize,
         )
-        asr_session = create_nemotron_streaming_session_from_manifest(
-            asr_manifest_path,
-            device=device,
-            target_language=target_language,
-        )
+        if asr_backend == "nemotron_onnx":
+            asr_session = create_nemotron_streaming_session_from_manifest(
+                asr_manifest_path,
+                device=device,
+                target_language=target_language,
+            )
+        else:
+            asr_session = create_qwen3_asr_modal_session(
+                config=qwen3_asr_config,
+                remote_actor=qwen3_asr_remote_actor,
+            )
         return cls(
             diarization_service=diarization_service,
             asr_session=asr_session,

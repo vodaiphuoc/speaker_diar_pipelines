@@ -19,12 +19,18 @@ PIPELINE_ALIGNMENT_MODE = os.environ.get(
     "PIPELINE_ALIGNMENT_MODE",
     "diarization_timeline",
 )
+PIPELINE_ASR_BACKEND = os.environ.get(
+    "PIPELINE_ASR_BACKEND",
+    "nemotron_onnx",
+)
 
 dockerfile_image = modal.Image.from_dockerfile(
     ROOT_DIR / "docker" / "Dockerfile_calibration_gpu",
     context_dir=ROOT_DIR,
     ignore="./.dockerignore",
 )
+if PIPELINE_ASR_BACKEND == "qwen3_modal":
+    dockerfile_image = dockerfile_image.pip_install("qwen-asr[vllm]")
 
 pipeline_calibration_volume = modal.Volume.from_name(
     PIPELINE_CALIBRATION_VOLUME_NAME,
@@ -63,8 +69,13 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
     logs_dir = volume_root / "ci-logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     alignment_mode = PIPELINE_ALIGNMENT_MODE
-    report_path = logs_dir / f"pipeline_calibration_report_{alignment_mode}.json"
-    raw_events_report_path = logs_dir / f"pipeline_raw_events_{alignment_mode}.json"
+    asr_backend = PIPELINE_ASR_BACKEND
+    report_path = (
+        logs_dir / f"pipeline_calibration_report_{asr_backend}_{alignment_mode}.json"
+    )
+    raw_events_report_path = (
+        logs_dir / f"pipeline_raw_events_{asr_backend}_{alignment_mode}.json"
+    )
 
     env = os.environ.copy()
     env.update(
@@ -73,6 +84,7 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
             "DIAR_ASSET_DIR": str(volume_root),
             "MODAL_PIPELINE_CALIBRATION_VOLUME": PIPELINE_CALIBRATION_VOLUME_NAME,
             "PIPELINE_ALIGNMENT_MODE": alignment_mode,
+            "PIPELINE_ASR_BACKEND": asr_backend,
             "RUN_PIPELINE_CALIBRATION": "1",
             "NEMOTRON_NATIVE_DEVICE": "cuda",
             "PIPELINE_CALIBRATION_WAV": (
@@ -87,6 +99,7 @@ def run_pipeline_calibration_remote() -> PipelineCalibrationResult:
         "DIAR_ASSET_DIR",
         "MODAL_PIPELINE_CALIBRATION_VOLUME",
         "PIPELINE_ALIGNMENT_MODE",
+        "PIPELINE_ASR_BACKEND",
         "RUN_PIPELINE_CALIBRATION",
         "NEMOTRON_NATIVE_DEVICE",
         "PIPELINE_CALIBRATION_WAV",
@@ -165,12 +178,14 @@ def main() -> None:
 
     if result["report"]:
         report_path = Path(
-            f"ci-logs/pipeline_calibration_report_{PIPELINE_ALIGNMENT_MODE}.json"
+            "ci-logs/"
+            f"pipeline_calibration_report_{PIPELINE_ASR_BACKEND}_{PIPELINE_ALIGNMENT_MODE}.json"
         )
         report_path.write_text(result["report"], encoding="utf-8")
     if result["raw_events_report"]:
         raw_events_report_path = Path(
-            f"ci-logs/pipeline_raw_events_{PIPELINE_ALIGNMENT_MODE}.json"
+            "ci-logs/"
+            f"pipeline_raw_events_{PIPELINE_ASR_BACKEND}_{PIPELINE_ALIGNMENT_MODE}.json"
         )
         raw_events_report_path.write_text(
             result["raw_events_report"],

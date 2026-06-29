@@ -213,14 +213,24 @@ def _run_onnx_pipeline_events(
     tuple[StreamingASREvent, ...],
     tuple[MergedSpeechSegment, ...],
 ]:
+    asr_backend = _resolve_pipeline_asr_backend()
     asr_asset_dir = Path(os.environ.get("ASR_ASSET_DIR", ".onnx_ckpt/asr"))
     diar_asset_dir = Path(os.environ.get("DIAR_ASSET_DIR", ".onnx_ckpt/diar"))
+    qwen3_asr_remote_actor = (
+        _create_qwen3_calibration_actor() if asr_backend == "qwen3_modal" else None
+    )
     service = StreamingDiarizationASROnnxService.from_manifests(
         diarization_manifest_path=diar_asset_dir / "diarization_artifact.json",
-        asr_manifest_path=asr_asset_dir / "asr_artifact.json",
+        asr_manifest_path=(
+            asr_asset_dir / "asr_artifact.json"
+            if asr_backend == "nemotron_onnx"
+            else None
+        ),
         device=os.environ.get("ONNX_PIPELINE_DEVICE", "cpu"),
         target_language="vi-VN",
         alignment_mode=alignment_mode,
+        asr_backend=asr_backend,
+        qwen3_asr_remote_actor=qwen3_asr_remote_actor,
     )
     pcm = wav_to_mono_pcm16_bytes(audio_path, target_sr=16000)
     bytes_per_chunk = 16000 // 10 * 2
@@ -259,6 +269,21 @@ def _resolve_pipeline_alignment_mode():
             "PIPELINE_ALIGNMENT_MODE must be 'diarization_timeline' or 'asr_timeline'"
         )
     return mode
+
+
+def _resolve_pipeline_asr_backend():
+    backend = os.environ.get("PIPELINE_ASR_BACKEND", "nemotron_onnx").strip()
+    if backend not in ("nemotron_onnx", "qwen3_modal"):
+        raise ValueError(
+            "PIPELINE_ASR_BACKEND must be 'nemotron_onnx' or 'qwen3_modal'"
+        )
+    return backend
+
+
+def _create_qwen3_calibration_actor():
+    from SDP.qwen3_asr.in_process_runtime import Qwen3ASRInProcessActor
+
+    return Qwen3ASRInProcessActor()
 
 
 def _merge_pipeline_events_for_calibration(diarization_events, asr_events):
@@ -308,6 +333,21 @@ class PipelineAlignmentModeResolutionTest(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"PIPELINE_ALIGNMENT_MODE": "bad"}):
             with self.assertRaisesRegex(ValueError, "PIPELINE_ALIGNMENT_MODE"):
                 _resolve_pipeline_alignment_mode()
+
+    def test_asr_backend_defaults_to_nemotron_onnx(self):
+        with unittest.mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(_resolve_pipeline_asr_backend(), "nemotron_onnx")
+
+    def test_asr_backend_accepts_qwen3_modal(self):
+        with unittest.mock.patch.dict(
+            os.environ, {"PIPELINE_ASR_BACKEND": "qwen3_modal"}
+        ):
+            self.assertEqual(_resolve_pipeline_asr_backend(), "qwen3_modal")
+
+    def test_asr_backend_rejects_unknown_value(self):
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_ASR_BACKEND": "bad"}):
+            with self.assertRaisesRegex(ValueError, "PIPELINE_ASR_BACKEND"):
+                _resolve_pipeline_asr_backend()
 
 
 class OnnxPipelineEventCollectionTest(unittest.TestCase):
@@ -367,6 +407,71 @@ class OnnxPipelineEventCollectionTest(unittest.TestCase):
         self.assertEqual(len(segments), 1)
         self.assertEqual(segments[0].speaker_id, 2)
         self.assertEqual(segments[0].text, "xin")
+
+    def test_qwen3_backend_uses_diar_manifest_without_asr_manifest(self):
+        diarization_event = StreamingDiarizationEvent(
+            stream_id="onnx",
+            sequence_id=0,
+            speaker_id=2,
+            start=0.0,
+            end=1.0,
+        )
+
+        class FakePipelineService:
+            def process(self, audio, stream_id="default"):
+                return StreamingPipelineResult(
+                    diarization_events=(diarization_event,),
+                    asr_events=(),
+                    merged_segments=(),
+                )
+
+            def flush(self, stream_id="default"):
+                return StreamingPipelineResult((), (), ())
+
+        qwen_actor = object()
+        with (
+            unittest.mock.patch.dict(
+                os.environ,
+                {
+                    "PIPELINE_ASR_BACKEND": "qwen3_modal",
+                    "DIAR_ASSET_DIR": "/diar",
+                    "ASR_ASSET_DIR": "/asr",
+                },
+            ),
+            unittest.mock.patch(
+                f"{__name__}.wav_to_mono_pcm16_bytes",
+                return_value=b"\x00\x00",
+            ),
+            unittest.mock.patch(
+                f"{__name__}._create_qwen3_calibration_actor",
+                return_value=qwen_actor,
+            ) as create_qwen3_actor,
+            unittest.mock.patch.object(
+                StreamingDiarizationASROnnxService,
+                "from_manifests",
+                return_value=FakePipelineService(),
+            ) as create_service,
+        ):
+            diarization_events, asr_events, segments = _run_onnx_pipeline_events(
+                Path("sample.wav"),
+                "diarization_timeline",
+            )
+
+        self.assertEqual(diarization_events, (diarization_event,))
+        self.assertEqual(asr_events, ())
+        self.assertEqual(len(segments), 1)
+        create_qwen3_actor.assert_called_once_with()
+        create_service.assert_called_once()
+        self.assertEqual(
+            create_service.call_args.kwargs["diarization_manifest_path"],
+            Path("/diar/diarization_artifact.json"),
+        )
+        self.assertIsNone(create_service.call_args.kwargs["asr_manifest_path"])
+        self.assertEqual(create_service.call_args.kwargs["asr_backend"], "qwen3_modal")
+        self.assertIs(
+            create_service.call_args.kwargs["qwen3_asr_remote_actor"],
+            qwen_actor,
+        )
 
 
 @unittest.skipUnless(

@@ -149,5 +149,41 @@ class DockerAndWorkflowTest(unittest.TestCase):
         self.assertIn("Report exists", modal_runner)
         self.assertNotIn('print("result: "', modal_runner)
 
+    def test_pipeline_calibration_supports_qwen3_asr_backend(self):
+        calibration_script = (
+            PROJECT_ROOT / "scripts" / "ci" / "run_pipeline_calibration.sh"
+        ).read_text(encoding="utf-8")
+        modal_runner = (
+            PROJECT_ROOT / "scripts" / "ci" / "run_modal_pipeline_calibration.py"
+        ).read_text(encoding="utf-8")
+        old_workflow = (
+            PROJECT_ROOT / ".github" / "workflows" / "pipeline-calibration.yml"
+        ).read_text(encoding="utf-8")
+        qwen3_workflow = (
+            PROJECT_ROOT / ".github" / "workflows" / "qwen3-pipeline-calibration.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('ASR_BACKEND="${PIPELINE_ASR_BACKEND:-nemotron_onnx}"', calibration_script)
+        self.assertIn('qwen3_modal)', calibration_script)
+        self.assertIn("Skipping ASR ONNX export for Qwen3", calibration_script)
+        self.assertIn("PIPELINE_ASR_BACKEND", modal_runner)
+        self.assertIn('"qwen3_modal"', modal_runner)
+        self.assertNotIn("qwen3_modal", old_workflow)
+        self.assertNotIn("qwen3-pipeline-calibration", old_workflow)
+        self.assertIn("name: Qwen3 Pipeline Calibration", qwen3_workflow)
+        self.assertIn("branches:\n      - qwen_asr", qwen3_workflow)
+        self.assertNotIn("workflow_dispatch", qwen3_workflow)
+        self.assertNotIn("schedule:", qwen3_workflow)
+        self.assertIn("PIPELINE_ASR_BACKEND: qwen3_modal", qwen3_workflow)
+        self.assertIn(
+            "MODAL_PIPELINE_CALIBRATION_VOLUME: speaker_diar_ci_pipeline_qwen3_calibration",
+            qwen3_workflow,
+        )
+        self.assertIn(
+            'DIAR_EXPORT_VOLUME_NAME="${MODAL_PIPELINE_CALIBRATION_VOLUME}"',
+            qwen3_workflow,
+        )
+        self.assertNotIn("MODAL_PIPELINE_QWEN3_CALIBRATION_VOLUME", qwen3_workflow)
+
 if __name__ == "__main__":
     unittest.main()

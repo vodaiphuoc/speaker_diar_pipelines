@@ -3,6 +3,7 @@ import asyncio
 import inspect
 from types import SimpleNamespace
 from typing import get_type_hints
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -417,6 +418,60 @@ class CombinedStreamingServiceTest(unittest.TestCase):
                 ),
             ),
         )
+
+    def test_factory_can_use_qwen3_modal_asr_backend_without_asr_manifest(self):
+        diar_service = object()
+        asr_session = object()
+        qwen_config = object()
+
+        with (
+            patch.object(
+                StreamingDiarizerOnnxService,
+                "from_manifest",
+                return_value=diar_service,
+            ) as create_diar,
+            patch(
+                "SDP.onnx.streaming_service.create_qwen3_asr_modal_session",
+                return_value=asr_session,
+            ) as create_qwen3_asr,
+            patch(
+                "SDP.onnx.streaming_service.load_asr_artifact_manifest",
+            ) as load_asr_manifest,
+        ):
+            service = StreamingDiarizationASROnnxService.from_manifests(
+                diarization_manifest_path="diarization_artifact.json",
+                asr_manifest_path=None,
+                asr_backend="qwen3_modal",
+                qwen3_asr_config=qwen_config,
+                qwen3_asr_remote_actor="remote-actor",
+            )
+
+        self.assertIs(service.diarization_service, diar_service)
+        self.assertIs(service.asr_session, asr_session)
+        create_diar.assert_called_once_with(
+            "diarization_artifact.json",
+            device="cpu",
+            post_processing_config=StreamingDiarizerOnnxService.from_manifest.__defaults__[1],
+            frame_len_in_secs=0.08,
+            sample_rate=16000,
+            left_offset=8,
+            right_offset=8,
+            enable_async_queue=False,
+            async_queue_maxsize=0,
+        )
+        create_qwen3_asr.assert_called_once_with(
+            config=qwen_config,
+            remote_actor="remote-actor",
+        )
+        load_asr_manifest.assert_not_called()
+
+    def test_factory_rejects_missing_asr_manifest_for_nemotron_backend(self):
+        with self.assertRaisesRegex(ValueError, "asr_manifest_path is required"):
+            StreamingDiarizationASROnnxService.from_manifests(
+                diarization_manifest_path="diarization_artifact.json",
+                asr_manifest_path=None,
+                asr_backend="nemotron_onnx",
+            )
 
 
 if __name__ == "__main__":
