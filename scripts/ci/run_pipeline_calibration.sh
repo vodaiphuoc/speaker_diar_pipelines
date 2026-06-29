@@ -8,7 +8,11 @@ ALIGNMENT_MODE="${PIPELINE_ALIGNMENT_MODE:-diarization_timeline}"
 ASR_BACKEND="${PIPELINE_ASR_BACKEND:-nemotron_onnx}"
 CALIBRATION_REPORT="${PIPELINE_CALIBRATION_REPORT:-/app/ci-logs/pipeline_calibration_report_${ALIGNMENT_MODE}.json}"
 RAW_EVENTS_REPORT="${PIPELINE_RAW_EVENTS_REPORT:-/app/ci-logs/pipeline_raw_events_${ALIGNMENT_MODE}.json}"
-CALIBRATION_TEST_TARGET="${PIPELINE_CALIBRATION_TEST_TARGET:-tests.calibration.pipeline.test_calibration.NativeVsOnnxPipelineCalibrationTest}"
+DEFAULT_CALIBRATION_TEST_TARGET="tests.calibration.pipeline.test_calibration.NativeVsOnnxPipelineCalibrationTest"
+if [[ "${ASR_BACKEND}" == "qwen3_modal" ]]; then
+  DEFAULT_CALIBRATION_TEST_TARGET="tests.calibration.pipeline.test_calibration.Qwen3PipelineCalibrationTest"
+fi
+CALIBRATION_TEST_TARGET="${PIPELINE_CALIBRATION_TEST_TARGET:-${DEFAULT_CALIBRATION_TEST_TARGET}}"
 
 case "${ALIGNMENT_MODE}" in
   diarization_timeline|asr_timeline) ;;

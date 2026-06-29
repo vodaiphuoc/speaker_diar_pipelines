@@ -193,4 +193,5 @@ def main() -> None:
         )
 
     if result["returncode"] != 0:
+        print(log_text, flush=True)
         raise SystemExit(return_code)

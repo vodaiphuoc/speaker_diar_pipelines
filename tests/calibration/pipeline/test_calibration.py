@@ -540,5 +540,71 @@ class NativeVsOnnxPipelineCalibrationTest(unittest.TestCase):
         )
 
 
+@unittest.skipUnless(
+    os.environ.get("RUN_PIPELINE_CALIBRATION") == "1",
+    "Set RUN_PIPELINE_CALIBRATION=1 to run pipeline-level Qwen3 calibration",
+)
+class Qwen3PipelineCalibrationTest(unittest.TestCase):
+    def test_qwen3_pipeline_segments_are_reported(self):
+        audio_path = Path(
+            os.environ.get(
+                "PIPELINE_CALIBRATION_WAV",
+                "tests/fixtures/bacsidatnhkhoavitadoc_1.wav",
+            )
+        )
+        alignment_mode = _resolve_pipeline_alignment_mode()
+        (
+            onnx_diarization_events,
+            onnx_asr_events,
+            onnx_segments,
+        ) = _run_onnx_pipeline_events(audio_path, alignment_mode)
+
+        report = build_pipeline_calibration_report(
+            audio_file=str(audio_path),
+            alignment_mode=alignment_mode,
+            native_segments=(),
+            onnx_segments=onnx_segments,
+            native_diarization_events=(),
+            native_asr_events=(),
+            onnx_diarization_events=onnx_diarization_events,
+            onnx_asr_events=onnx_asr_events,
+        )
+        calibration_report_path = os.environ.get(
+            "PIPELINE_CALIBRATION_REPORT",
+            "ci-logs/pipeline_calibration_report.json",
+        )
+        write_pipeline_calibration_report(calibration_report_path, report)
+        write_pipeline_calibration_report(
+            os.environ.get(
+                "PIPELINE_RAW_EVENTS_REPORT",
+                str(_raw_events_report_path(calibration_report_path)),
+            ),
+            build_pipeline_raw_events_report(
+                audio_file=str(audio_path),
+                alignment_mode=alignment_mode,
+                native_diarization_events=(),
+                native_asr_events=(),
+                onnx_diarization_events=onnx_diarization_events,
+                onnx_asr_events=onnx_asr_events,
+            ),
+        )
+
+        self.assertGreater(
+            len(onnx_diarization_events),
+            0,
+            "Qwen3 pipeline produced no diarization events.",
+        )
+        self.assertGreater(
+            len(onnx_asr_events),
+            0,
+            "Qwen3 pipeline produced no ASR events.",
+        )
+        self.assertGreater(
+            len(onnx_segments),
+            0,
+            "Qwen3 pipeline produced no merged diarization/ASR segments.",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
